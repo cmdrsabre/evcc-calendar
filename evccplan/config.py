@@ -6,6 +6,7 @@ from typing import Optional
 
 import yaml
 
+from . import i18n
 from .classify import Rule
 from .models import Mode
 
@@ -46,6 +47,7 @@ class Config:
     db_path: str = "/data/state.db"
     personal_dir: str = ""           # personal images (not in the repo); default: "personal" folder next to the database
     timezone: str = "Europe/Berlin"
+    language: str = "en"             # UI and message language (see evccplan/static/locales)
     retries: int = 3
     retry_delay_s: float = 5.0
 
@@ -104,6 +106,8 @@ def from_dict(d: dict, env=_env) -> Config:
     c.db_path = d.get("db_path") or c.db_path
     c.personal_dir = d.get("personal_dir") or ""
     c.timezone = d.get("timezone") or c.timezone
+    lang = str(d.get("language") or c.language).lower()
+    c.language = lang if lang in i18n.available() else c.language
     return c
 
 
