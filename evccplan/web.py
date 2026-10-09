@@ -159,6 +159,14 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
                             "timezone": cfg.timezone, "reserve_soc": cfg.reserve_soc, "targets": TARGETS,
                             "manual_drive_min": cfg.manual_drive_min, "version": __version__, "now": datetime.now(timezone.utc).isoformat()})
                 return self._json(200, res)
+            if path == "/api/settings":
+                if not self._authed():
+                    return self._json(401, {"error": "Anmeldung nötig"})
+                return self._json(200, self._settings_dict())
+            if path == "/api/history":
+                if not self._authed():
+                    return self._json(401, {"error": "Anmeldung nötig"})
+                return self._json(200, {"runs": runner.store.runs(100)})
             if path == "/api/personal/car":
                 if not self._authed():
                     return self._json(401, {"error": "Anmeldung nötig"})
@@ -227,7 +235,24 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
                 return self._json(202, {"ok": True})
             if path == "/api/override":
                 return self._override(data)
+            if path == "/api/settings":
+                return self._settings(data)
             self._json(404, {"error": "nicht gefunden"})
+
+        def _settings_dict(self) -> dict:
+            st = runner.settings
+            return {"values": st.values(), "defaults": st.base, "changed": st.changed(), "limits": st.limits()}
+
+        def _settings(self, data: dict):
+            try:
+                if data.get("reset") is True:
+                    runner.settings.reset()
+                else:
+                    runner.settings.update(data.get("values"))
+            except ValueError as exc:
+                return self._json(400, {"error": str(exc)})
+            runs.request(force_dry=False)        # new values take effect in the configured mode
+            self._json(200, self._settings_dict())
 
         def _override(self, data: dict):
             key, mode, target = data.get("key"), data.get("mode"), data.get("target")
