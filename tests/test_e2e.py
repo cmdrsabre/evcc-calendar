@@ -1,4 +1,4 @@
-"""Ende-zu-Ende mit den echten Terminen und Werten aus dem POC-Lauf (Fake-Server fuer HA und evcc)."""
+"""End-to-end with the real events and values from the POC run (fake servers for HA and evcc)."""
 import json
 import threading
 import urllib.parse
@@ -17,29 +17,29 @@ from evccplan.store import Store
 UTC = timezone.utc
 TARGETS = {"info": ["notify.a"], "warning": ["notify.a", "notify.b"], "error": ["notify.a", "notify.b", "notify.c"]}
 
-CAL = [  # (Titel, Start, Ende, Ort) - lokale Zeit MESZ, aus dem POC
+CAL = [  # (title, start, end, place) - local time CEST, from the POC
     ("Kinder bei Omi (Zeit noch nicht fest)", "2026-10-11T14:00:00+02:00", "2026-10-11T17:00:00+02:00", ""),
-    ("Termin - MEG-Radiologie Ludwigsfelde", "2026-10-12T08:15:00+02:00", "2026-10-12T08:30:00+02:00",
-     "Albert-Schweitzer-Straße 40, 14974 Ludwigsfelde"),
-    ("Auswertungsgespräch Arthur", "2026-10-12T11:55:00+02:00", "2026-10-12T12:25:00+02:00",
-     "Isabelle Plessow Kinder- und Jugendlichenpsychotherapeutin Roedernstraße 15, 12459 Berlin"),
-    ("Hausarzt - Juliana Guerrero", "2026-10-12T16:00:00+02:00", "2026-10-12T16:30:00+02:00",
-     "Smart Care MVZ Ludwigsfelde - Dr. Juliana Guerrero Straße der Jugend 63 14974 Ludwigsfelde"),
-    ("Axel bei Fritz!", "2026-10-13T09:00:00+02:00", "2026-10-13T17:00:00+02:00", "Stromstraße 7\n10555 Berlin\nDeutschland"),
-    ("Termin - Charité | Hals-, Nasen- und Ohrenheilkunde (HNO)", "2026-10-13T10:40:00+02:00",
-     "2026-10-13T11:00:00+02:00", "Mittelallee 2, 13353 Berlin"),
-    ("Hooptraining", "2026-10-13T18:00:00+02:00", "2026-10-13T19:00:00+02:00",
-     "Volkshochschule Treptow-Köpenick, Baumschulenstraße 79-81, 12437 Berlin, Deutschland"),
-    ("Anne Uni", "2026-10-14T09:45:00+02:00", "2026-10-14T11:00:00+02:00",
-     "Hochschule für Technik und Wirtschaft Berlin (HTW Berlin) - Campus Wilhelminenhof, "
-     "Wilhelminenhofstraße 75A, 12459 Berlin-Bezirk Treptow-Köpenick, Deutschland"),
-    ("Termin - MEG-Radiologie Ludwigsfelde", "2026-10-16T10:30:00+02:00", "2026-10-16T11:00:00+02:00",
-     "Albert-Schweitzer-Straße 40, 14974 Ludwigsfelde"),
+    ("Termin - Praxis Musterstadt", "2026-10-12T08:15:00+02:00", "2026-10-12T08:30:00+02:00",
+     "Beispielweg 40, 14974 Musterstadt"),
+    ("Besprechung Tim", "2026-10-12T11:55:00+02:00", "2026-10-12T12:25:00+02:00",
+     "Erika Beispiel Fachpraxis Rosenstraße 15, 12459 Berlin"),
+    ("Hausarzt - Dr. Muster", "2026-10-12T16:00:00+02:00", "2026-10-12T16:30:00+02:00",
+     "Beispiel MVZ Musterstadt - Dr. Erika Muster Lindenstraße 63 14974 Musterstadt"),
+    ("Max bei Firma!", "2026-10-13T09:00:00+02:00", "2026-10-13T17:00:00+02:00", "Hauptstraße 7\n10555 Berlin\nDeutschland"),
+    ("Termin - Klinik | Fachabteilung", "2026-10-13T10:40:00+02:00",
+     "2026-10-13T11:00:00+02:00", "Parkallee 2, 13353 Berlin"),
+    ("Yogakurs", "2026-10-13T18:00:00+02:00", "2026-10-13T19:00:00+02:00",
+     "Volkshochschule Beispielstadt, Gartenstraße 79-81, 12437 Berlin, Deutschland"),
+    ("Lisa Uni", "2026-10-14T09:45:00+02:00", "2026-10-14T11:00:00+02:00",
+     "Hochschule Beispiel (HB Berlin) - Campus Nord, "
+     "Uferstraße 75A, 12459 Berlin-Bezirk Beispielbezirk, Deutschland"),
+    ("Termin - Praxis Musterstadt", "2026-10-16T10:30:00+02:00", "2026-10-16T11:00:00+02:00",
+     "Beispielweg 40, 14974 Musterstadt"),
 ]
-KM = {"Albert-Schweitzer-Straße 40, 14974 Ludwigsfelde": (2.1, 8), "Roedernstraße 15, 12459 Berlin": (42.9, 45),
-      "Straße der Jugend 63, 14974 Ludwigsfelde": (0.5, 2), "Stromstraße 7, 10555 Berlin": (45.1, 52),
-      "Mittelallee 2, 13353 Berlin": (47.4, 52), "Baumschulenstraße 79-81, 12437 Berlin": (44.2, 41),
-      "Wilhelminenhofstraße 75A, 12459 Berlin": (44.0, 41)}
+KM = {"Beispielweg 40, 14974 Musterstadt": (2.1, 8), "Rosenstraße 15, 12459 Berlin": (42.9, 45),
+      "Lindenstraße 63, 14974 Musterstadt": (0.5, 2), "Hauptstraße 7, 10555 Berlin": (45.1, 52),
+      "Parkallee 2, 13353 Berlin": (47.4, 52), "Gartenstraße 79-81, 12437 Berlin": (44.2, 41),
+      "Uferstraße 75A, 12459 Berlin": (44.0, 41)}
 
 
 class FakeOrs:
@@ -50,8 +50,8 @@ class FakeOrs:
         self.geocodes.append(text)
         if text in KM:
             return Place(52.0 + len(self.geocodes) / 1000, 13.0, text, 1.0, "address")
-        if text.startswith("Smart Care") or text == "Ludwigsfelde":
-            return Place(52.3, 13.2, "Ludwigsfelde, BB, Germany", 0.6, "locality")
+        if text.startswith("Beispiel MVZ") or text == "Musterstadt":
+            return Place(52.3, 13.2, "Musterstadt, BB, Germany", 0.6, "locality")
         return None
 
     def route(self, a, b):
@@ -60,7 +60,7 @@ class FakeOrs:
 
 
 class TableOrs(FakeOrs):
-    """Liefert Strecken aus der KM-Tabelle, anhand der zuletzt geocodierten Adresse."""
+    """Returns routes from the km table, based on the most recently geocoded address."""
     def __init__(self):
         super().__init__()
         self.by_coord = {}
@@ -156,10 +156,10 @@ def env():
     srv = Server(evcc_state(), CAL)
     cfg = Config(ha_url=srv.url, ha_token="tok", ha_calendar="calendar.a_a", notify_targets=TARGETS,
                  evcc_url=srv.url, evcc_key="tok", evcc_vehicle="db:1", ors_key="k", home_lat=52.3, home_lon=13.2,
-                 rules=[Rule("fritz*", Mode.BAHN), Rule("uni*", Mode.AUTO)], dry_run=False, retry_delay_s=0)
+                 rules=[Rule("firma*", Mode.BAHN), Rule("uni*", Mode.AUTO)], dry_run=False, retry_delay_s=0)
     ors = TableOrs()
     store = Store(":memory:")
-    state = {"now": datetime(2026, 10, 12, 6, 0, tzinfo=UTC)}      # nach Abfahrt zum MEG-Termin
+    state = {"now": datetime(2026, 10, 12, 6, 0, tzinfo=UTC)}      # after departure for the MEG event
     runner = Runner(cfg, store, HAClient(srv.url, "tok"), EvccClient(srv.url, "tok"), ors, lambda: state["now"])
     yield srv, cfg, runner, state, ors, store
     srv.close()
@@ -174,17 +174,17 @@ def test_real_week_live_run_sets_expected_plan(env):
     res = runner.run()
     assert res["ok"], res["error"]
     st = status_by_title(res)
-    assert not any(k.startswith("Kinder bei Omi") for k in st)            # liegt vor "jetzt"
-    assert st["Axel bei Fritz!@2026-10-13"] == "bahn"
-    assert st["Termin - MEG-Radiologie Ludwigsfelde@2026-10-12"] == "nah"
-    assert st["Auswertungsgespräch Arthur@2026-10-12"] == "geplant"
+    assert not any(k.startswith("Kinder bei Omi") for k in st)            # lies before "now"
+    assert st["Max bei Firma!@2026-10-13"] == "bahn"
+    assert st["Termin - Praxis Musterstadt@2026-10-12"] == "nah"
+    assert st["Besprechung Tim@2026-10-12"] == "geplant"
     d = res["desired"]
     assert d["soc"] == 45 and d["time"] == "2026-10-12T08:40:00Z"
     assert srv.calls == [("POST", "/api/vehicles/db%3A1/plan/soc/45/2026-10-12T08%3A40%3A00Z")]
     assert store.get("last_set") == {"soc": 45, "time": "2026-10-12T08:40:00Z"}
-    # die MVZ-Adresse wurde ueber den Vorfilter aufgeloest, nicht ueber den Ortskern
-    assert "Straße der Jugend 63, 14974 Ludwigsfelde" in ors.geocodes
-    assert st["Anne Uni@2026-10-14"] in ("verkettet", "spaeter")
+    # the MVZ address was resolved via the pre-filter, not via the town center
+    assert "Lindenstraße 63, 14974 Musterstadt" in ors.geocodes
+    assert st["Lisa Uni@2026-10-14"] in ("verkettet", "spaeter")
 
 
 def test_second_run_is_idempotent(env):
@@ -195,7 +195,7 @@ def test_second_run_is_idempotent(env):
     res = runner.run()
     assert res["action"]["kind"] == "none"
     assert len(srv.calls) == 1
-    assert len(ors.geocodes) == n_geo                                     # Geocoding kommt aus dem Cache
+    assert len(ors.geocodes) == n_geo                                     # geocoding comes from the cache
 
 
 def test_dry_run_writes_nothing_and_sends_nothing(env):
@@ -214,20 +214,20 @@ def test_manual_plan_untouched_and_single_notification(env):
     assert any("manuell" in m for m in srv.notified)
     n = len(srv.notified)
     runner.run()
-    assert len(srv.notified) == n                                        # nur einmal melden
+    assert len(srv.notified) == n                                        # report only once
 
 
 def test_service_deletes_only_its_own_plan(env):
     srv, cfg, runner, state, ors, store = env
-    runner.run()                                                          # setzt 45 %
+    runner.run()                                                          # sets 45 %
     srv.state["vehicles"]["db:1"]["plan"] = {"soc": 45, "time": "2026-10-12T08:40:00Z"}
-    srv.calendar = [c for c in CAL if "Roedernstraße" not in c[3] and "Straße der Jugend" not in c[3]]
+    srv.calendar = [c for c in CAL if "Rosenstraße" not in c[3] and "Lindenstraße" not in c[3]]
     state["now"] = datetime(2026, 10, 12, 7, 0, tzinfo=UTC)
     srv.calls.clear()
-    # Charité-Termin (Di) ist der naechste; Plan "45 %" gehoert dem Dienst, wird ersetzt statt geloescht
+    # Clinic event (Tue) is the next one; plan "45 %" belongs to the service, is replaced rather than deleted
     res = runner.run()
     assert res["action"]["kind"] == "set"
-    # Kalender leer -> eigener Plan wird entfernt
+    # calendar empty -> own plan is removed
     srv.calendar = []
     srv.state["vehicles"]["db:1"]["plan"] = {"soc": res["desired"]["soc"], "time": res["desired"]["time"]}
     srv.calls.clear()
@@ -239,9 +239,9 @@ def test_before_first_departure_no_plan_needed(env):
     srv, cfg, runner, state, ors, store = env
     state["now"] = datetime(2026, 10, 9, 10, 0, tzinfo=UTC)
     res = runner.run()
-    assert status_by_title(res)["Termin - MEG-Radiologie Ludwigsfelde@2026-10-12"] == "nah"
-    assert res["desired"]["soc"] == 45 and res["desired"]["title"].startswith("Auswertungsgespräch")
-    assert len(res["items"]) == 8                       # Termin am 16.10. liegt ausserhalb der 6 Tage
+    assert status_by_title(res)["Termin - Praxis Musterstadt@2026-10-12"] == "nah"
+    assert res["desired"]["soc"] == 45 and res["desired"]["title"].startswith("Besprechung")
+    assert len(res["items"]) == 8                       # event on 16.10. is outside the 6 days
     assert all(i["start"] < "2026-10-16" for i in res["items"])
 
 
@@ -309,27 +309,27 @@ class DeadEvcc(EvccClient):
 
 def test_evcc_down_three_attempts_then_alarm_once(env):
     srv, cfg, runner, state, ors, store = env
-    runner.run()                                                       # guter Lauf, Stand merken
+    runner.run()                                                       # good run, remember the state
     runner.evcc = DeadEvcc("http://x", "tok")
     DeadEvcc.attempts = 0
     r = runner.run()
     assert DeadEvcc.attempts == 3
     assert not r["ok"] and "nach 3 Versuchen" in r["error"]
-    assert r["items"] and r["stale_since"]                              # letzter guter Stand bleibt sichtbar
+    assert r["items"] and r["stale_since"]                              # last good state stays visible
     runner.run()
     assert len([m for m in srv.notified if m.startswith("ALARM: evcc")]) == 1
 
 
 def test_calendar_down_uses_last_known_events_and_warns(env):
     srv, cfg, runner, state, ors, store = env
-    runner.run()                                                       # setzt Plan, merkt Termine
-    srv.state["vehicles"]["db:1"]["plan"] = None                       # Plan ist weg -> muss neu gesetzt werden
+    runner.run()                                                       # sets plan, remembers events
+    srv.state["vehicles"]["db:1"]["plan"] = None                       # plan is gone -> must be set again
     srv.fail_calendar = True
     srv.calls.clear()
     r = runner.run()
     assert r["ok"] and r["desired"]["soc"] == 45
     assert r["stale_since"] and any("Kalender nicht lesbar" in p for p in r["problems"])
-    assert srv.calls and srv.calls[0][0] == "POST"                      # evcc wird weiter bedient
+    assert srv.calls and srv.calls[0][0] == "POST"                      # evcc keeps being served
     runner.run()
     assert len([m for m in srv.notified if "Kalender nicht lesbar" in m]) == 1
 
@@ -359,14 +359,14 @@ def test_cold_start_with_calendar_down_and_no_cache_reports_error(env):
 
 def test_notification_targets_by_level(env):
     srv, cfg, runner, state, ors, store = env
-    runner.run()                                                     # Plan gesetzt -> Bestaetigung
+    runner.run()                                                     # plan set -> confirmation
     i = [k for k, m in enumerate(srv.notified) if m.startswith("Ladeplan gesetzt")]
     assert len(i) == 1 and srv.targets[i[0]] == ["notify.a"]
-    srv.state["loadpoints"][0]["vehicleLimitSoc"] = 80              # Warnung
+    srv.state["loadpoints"][0]["vehicleLimitSoc"] = 80              # warning
     runner.run()
     k = [k for k, m in enumerate(srv.notified) if "Ladelimit im Auto" in m][0]
     assert srv.targets[k] == ["notify.a", "notify.b"]
-    srv.fail_calendar = True                                         # Fehler
+    srv.fail_calendar = True                                         # error
     runner.run()
     k = [k for k, m in enumerate(srv.notified) if "Kalender nicht lesbar" in m][0]
     assert srv.targets[k] == ["notify.a", "notify.b", "notify.c"]

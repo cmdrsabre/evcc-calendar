@@ -1,4 +1,4 @@
-"""Einstufung Auto/Bahn aus Titel, Beschreibung und Regelliste."""
+"""Car/train classification from title, description and rule list."""
 from __future__ import annotations
 
 import fnmatch
@@ -11,7 +11,7 @@ _WORD = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 def words(text: str) -> list:
-    """Kleingeschriebene ganze Woerter ohne Satzzeichen."""
+    """Lowercase whole words without punctuation."""
     return [w.lower() for w in _WORD.findall(text or "")]
 
 
@@ -22,7 +22,7 @@ class Rule:
 
 
 def _rule_hits(pattern: str, title_words: list) -> bool:
-    # Muster in Woerter zerlegen, '*' bleibt als Wildcard erhalten.
+    # Split the pattern into words; '*' is kept as a wildcard.
     parts = [p for p in re.split(r"\s+", pattern.strip().lower()) if p]
     if not parts:
         return False

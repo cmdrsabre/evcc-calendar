@@ -1,4 +1,4 @@
-"""SQLite-Speicher: Caches, gesendete Hinweise, zuletzt gesetzter Plan, letzter Lauf."""
+"""SQLite store: caches, sent notices, last plan set, last run."""
 from __future__ import annotations
 
 import json
@@ -44,7 +44,7 @@ class Store:
             self._db.execute("DELETE FROM kv WHERE k=?", (key,))
             self._db.commit()
 
-    # --- cache (Geocoding, Routen)
+    # --- cache (geocoding, routes)
     def cache_get(self, key: str, max_age_days: float = 90) -> Optional[Any]:
         with self._lock:
             row = self._db.execute("SELECT v, ts FROM cache WHERE k=?", (key,)).fetchone()
@@ -57,7 +57,7 @@ class Store:
             self._db.execute("INSERT OR REPLACE INTO cache VALUES (?,?,?)", (key, json.dumps(value), time.time()))
             self._db.commit()
 
-    # --- Vorgaben pro Termin
+    # --- Per-event overrides
     def overrides(self) -> dict:
         from .models import Override
         with self._lock:
@@ -74,12 +74,12 @@ class Store:
             self._db.commit()
 
     def prune_overrides(self, before_iso: str) -> None:
-        """Vorgaben vergangener Termine entfernen (start ist ISO-UTC und damit sortierbar)."""
+        """Remove overrides of past events (start is ISO UTC and therefore sortable)."""
         with self._lock:
             self._db.execute("DELETE FROM overrides WHERE start<>'' AND start<?", (before_iso,))
             self._db.commit()
 
-    # --- Sitzungen (nur Hash des Tokens wird gespeichert)
+    # --- Sessions (only the token hash is stored)
     def session_add(self, token_hash: str, expires: float) -> None:
         with self._lock:
             self._db.execute("INSERT OR REPLACE INTO sessions VALUES (?,?)", (token_hash, expires))
@@ -100,7 +100,7 @@ class Store:
             self._db.execute("DELETE FROM sessions WHERE expires<?", (time.time(),))
             self._db.commit()
 
-    # --- Hinweise nur einmal senden
+    # --- Send notices only once
     def was_notified(self, key: str, ttl_hours: Optional[float]) -> bool:
         with self._lock:
             row = self._db.execute("SELECT ts FROM notified WHERE k=?", (key,)).fetchone()
