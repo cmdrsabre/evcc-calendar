@@ -6,10 +6,10 @@ services:
     env_file: .env                         # HA_TOKEN, EVCC_API_KEY, ORS_KEY
     user: "${PUID:-1000}:${PGID:-1000}"    # Unraid: 99:100 (nobody:users)
     sysctls:
-      net.ipv4.ip_unprivileged_port_start: 0   # erlaubt Port 80 ohne Root im Container
+      net.ipv4.ip_unprivileged_port_start: 0   # allows port 80 without root inside the container
     environment:
       TZ: Europe/Berlin
     volumes:
-      - "${DATA_DIR:-/mnt/user/appdata/evcc-kalender}:/data"   # config.yaml und state.db
+      - "${DATA_DIR:-/mnt/user/appdata/evcc-kalender}:/data"   # config.yaml and state.db
     ports:
       - "${HOST_PORT:-8180}:80"

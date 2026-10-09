@@ -1,4 +1,4 @@
-"""REST-Clients fuer Home Assistant, evcc und OpenRouteService (nur Standardbibliothek)."""
+"""REST clients for Home Assistant, evcc and OpenRouteService (standard library only)."""
 from __future__ import annotations
 
 import json
@@ -13,15 +13,15 @@ from .models import Event, Place, Route
 
 
 class ApiError(Exception):
-    """Fehler eines Dienstes. Die Meldung enthaelt weder URL-Parameter noch Schluessel."""
+    """Error from a service. The message contains neither URL parameters nor keys."""
 
 
 class EvccDown(ApiError):
-    """evcc antwortet auch nach mehreren Versuchen nicht."""
+    """evcc does not respond even after several attempts."""
 
 
 class OrsDown(ApiError):
-    """OpenRouteService nicht erreichbar."""
+    """OpenRouteService unreachable."""
 
 
 def _request(method: str, url: str, headers: dict, body=None, timeout: float = 20.0):
@@ -67,7 +67,7 @@ class HAClient:
         out = []
         for raw in data or []:
             s, e = raw.get("start") or {}, raw.get("end") or {}
-            if "dateTime" not in s or "dateTime" not in e:      # ganztaegig -> ignorieren
+            if "dateTime" not in s or "dateTime" not in e:      # all-day -> ignore
                 continue
             title = raw.get("summary") or ""
             start_dt, end_dt = _utc(s["dateTime"]), _utc(e["dateTime"])
@@ -78,7 +78,7 @@ class HAClient:
         return out
 
     def notify(self, entities: list, title: str, message: str) -> None:
-        """notify.send_message mit Ziel-Entitaeten (App-Push, Telegram, Alexa-Durchsage ...)."""
+        """notify.send_message with target entities (app push, Telegram, Alexa announcement ...)."""
         _request("POST", "%s/api/services/notify/send_message" % self.url, self.headers,
                  {"entity_id": list(entities), "title": title, "message": message}, timeout=self.timeout)
 
@@ -117,7 +117,7 @@ class EvccClient:
 
 
 def forecast_temperature(state: dict, at: datetime) -> Optional[float]:
-    """Temperatur aus der evcc-Prognose (Slots [start, ende, wert]) zum Zeitpunkt `at`."""
+    """Temperature from the evcc forecast (slots [start, end, value]) at time `at`."""
     slots = ((state.get("forecast") or {}).get("temperature")) or []
     best, best_d = None, None
     for s in slots:
@@ -177,7 +177,7 @@ class OrsClient:
 
 
 def straight_line_route(a: tuple, b: tuple, factor: float = 1.3, speed_kmh: float = 60.0) -> Route:
-    """Ersatz bei Routing-Ausfall: Luftlinie x Faktor."""
+    """Fallback when routing fails: straight-line distance x factor."""
     r = 6371.0
     la1, lo1, la2, lo2 = map(math.radians, (a[0], a[1], b[0], b[1]))
     h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2

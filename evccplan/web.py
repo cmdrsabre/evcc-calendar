@@ -1,4 +1,4 @@
-"""Web-Oberflaeche: JSON-API plus statische Single-Page-App (evccplan/static), nur Standardbibliothek."""
+"""Web UI: JSON API plus static single-page app (evccplan/static), standard library only."""
 from __future__ import annotations
 
 import json
@@ -31,13 +31,13 @@ TARGETS = list(range(5, 101, 5))
 
 
 class RunRequester:
-    """Fasst mehrere Aenderungen kurz hintereinander zu moeglichst wenigen Laeufen zusammen."""
+    """Coalesces several changes in quick succession into as few runs as possible."""
 
     def __init__(self, runner):
         self.runner = runner
         self._lock = threading.Lock()
         self._pending = False
-        self._live = False                 # mindestens eine Anforderung verlangt einen regulaeren Lauf
+        self._live = False                 # at least one request demands a regular run
         self._worker = None
 
     @property
@@ -61,7 +61,7 @@ class RunRequester:
                 self._pending, dry, self._live = False, not self._live, False
             try:
                 self.runner.run(force_dry=dry)
-            except Exception:                                  # Runner faengt selbst ab; das hier ist nur Sicherheit
+            except Exception:                                  # the runner catches errors itself; this is only a safeguard
                 log.exception("Lauf aus der Oberfläche fehlgeschlagen")
 
 
@@ -77,7 +77,7 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
         server_version = "evccplan"
         sys_version = ""
 
-        # ------------------------------------------------------------ Hilfen
+        # ------------------------------------------------------------ Helpers
         def _send(self, code, ctype, data: bytes, extra=None):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
@@ -115,7 +115,7 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
             return self.client_address[0]
 
         def _body(self):
-            """JSON-Body lesen; None bei Fehler (Antwort ist dann schon gesendet)."""
+            """Read the JSON body; None on error (the response has already been sent)."""
             if "application/json" not in (self.headers.get("Content-Type") or ""):
                 self._json(415, {"error": "JSON erwartet"})
                 return None
@@ -168,7 +168,7 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
             self._static(path)
 
         def _personal_car(self):
-            """Eigenes Fahrzeugbild aus dem Datenordner. Nur eingeloggt sichtbar; feste Dateinamen, kein Pfad aus der Anfrage."""
+            """Custom vehicle image from the data folder. Visible only when logged in; fixed file names, no path taken from the request."""
             for name in ("car.webp", "car.png", "car.jpg", "car.jpeg"):
                 f = Path(cfg.personal_path) / name
                 try:
@@ -237,9 +237,9 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
             if item is None:
                 return self._json(404, {"error": "Termin nicht mehr vorhanden. Bitte die Seite aktualisieren."})
             if target is not None and mode == "none":
-                mode = None                      # ein Ziel heisst: hier wird geladen
+                mode = None                      # a target means: charge here
             runner.store.set_override(key, mode, target, item.get("title") or "", item.get("start") or "")
-            runs.request(force_dry=False)        # wirkt im konfigurierten Modus (Dry-Run oder scharf)
+            runs.request(force_dry=False)        # acts in the configured mode (dry run or live)
             self._json(202, {"ok": True})
 
         def log_message(self, *a):

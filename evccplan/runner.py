@@ -1,4 +1,4 @@
-"""Ein Lauf: Kalender lesen, planen, mit evcc abgleichen, Hinweise senden."""
+"""One run: read calendar, plan, reconcile with evcc, send notices."""
 from __future__ import annotations
 
 import logging
@@ -32,9 +32,9 @@ class Runner:
         self._last_ok: dict = {}
         self._ors_down = False
 
-    # ------------------------------------------------------------ Adressen und Routen
+    # ------------------------------------------------------------ Addresses and routes
     def _retry(self, fn, what: str, down_cls=ApiError):
-        """Bis zu `retries` Versuche mit wachsender Pause; danach down_cls."""
+        """Up to `retries` attempts with growing pauses; then down_cls."""
         last = None
         for n in range(max(1, self.cfg.retries)):
             try:
@@ -80,7 +80,7 @@ class Runner:
         return self.store.cache_get(key) or None
 
     def resolve(self, event) -> tuple:
-        """-> (Route|None, Fehlertext|None, Ortsname)"""
+        """-> (Route|None, error text|None, place name)"""
         if not self.ors:
             return None, "ORS-Key fehlt", ""
         best_note = ""
@@ -111,7 +111,7 @@ class Runner:
         self.store.cache_put(key, {"km": r.distance_km, "min": r.duration_min})
         return r
 
-    # ------------------------------------------------------------ Lauf
+    # ------------------------------------------------------------ Run
     def run(self, force_dry: bool = False) -> dict:
         with self._lock:
             dry = force_dry or self.cfg.dry_run
@@ -127,13 +127,13 @@ class Runner:
                                                  "am Ladeplan geändert." % exc, ttl_hours=6, level="error"))
             except ApiError as exc:
                 self._fail(res, exc, dry, Notice("outage", "Ladeplanung gestört: %s" % exc, ttl_hours=12, level="error"))
-            except Exception as exc:                               # nie den Dienst beenden
+            except Exception as exc:                               # never terminate the service
                 res["error"] = "Interner Fehler: %s" % exc
                 res["problems"].append(res["error"])
                 log.exception("Interner Fehler")
             if res["ok"]:
                 self._last_ok = res
-            elif self._last_ok and not res["items"]:               # letzten guten Stand mit anzeigen
+            elif self._last_ok and not res["items"]:               # also show the last good state
                 for k in ("items", "desired", "vehicle", "effective"):
                     res[k] = self._last_ok.get(k)
                 res["stale_since"] = self._last_ok["time"]
@@ -238,7 +238,7 @@ class Runner:
         self.store.prune()
 
     def _events(self, res: dict, now: datetime) -> tuple:
-        """Kalender lesen; bei Ausfall mit dem zuletzt gelesenen Stand weiterarbeiten."""
+        """Read the calendar; on failure continue with the last state read."""
         end = now + timedelta(days=self.cfg.horizon_days)
         try:
             events = self._retry(lambda: self.ha.calendar_events(self.cfg.ha_calendar, now, end), "Home Assistant (Kalender)")

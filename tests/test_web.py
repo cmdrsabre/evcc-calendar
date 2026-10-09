@@ -1,4 +1,4 @@
-"""Web-API: Einrichten, Anmelden, Vorgaben pro Termin, Sicherheitsregeln."""
+"""Web API: setup, login, per-event overrides, security rules."""
 import json
 import time
 import urllib.error
@@ -9,9 +9,9 @@ import pytest
 from evccplan import auth as authmod
 from evccplan.web import make_server
 
-from test_e2e import env, status_by_title  # noqa: F401  (Fixture und Hilfen wiederverwenden)
+from test_e2e import env, status_by_title  # noqa: F401  (reuse fixture and helpers)
 
-authmod.ITERATIONS = 1000        # schnelle Tests
+authmod.ITERATIONS = 1000        # fast tests
 
 
 class Client:
@@ -76,7 +76,7 @@ def test_first_call_sets_password_and_logs_in(web):
     setup_login(c)
     me = c.call("GET", "/api/me")[1]
     assert me["setup_needed"] is False and me["authed"] is True
-    assert c.call("POST", "/api/setup", {"password": "nochmal-1234"})[0] == 409        # nur einmal
+    assert c.call("POST", "/api/setup", {"password": "nochmal-1234"})[0] == 409        # only once
 
 
 def test_status_needs_login_and_wrong_password_fails(web):
@@ -104,7 +104,7 @@ def test_login_locks_after_repeated_failures(web):
     c.cookie = None
     codes = [c.call("POST", "/api/login", {"password": "x" * 9})[0] for _ in range(6)]
     assert codes[:5] == [401] * 5 and codes[5] == 429
-    assert c.call("POST", "/api/login", {"password": "geheim-1234"})[0] == 429           # auch richtig bleibt gesperrt
+    assert c.call("POST", "/api/login", {"password": "geheim-1234"})[0] == 429           # even the correct one stays blocked
 
 
 def test_csrf_and_content_type_rules(web):
@@ -136,8 +136,8 @@ def test_override_changes_plan_and_triggers_run(web):
     arthur = next(i for i in st["items"] if i["title"].startswith("Auswertungsgespräch"))
     assert arthur["override_target"] == 90 and arthur["target_chain"] == 90
     assert st["desired"]["soc"] == 90
-    assert any("/plan/soc/90/" in p for _, p in srv.calls)                  # scharf konfiguriert: wurde nach evcc geschrieben
-    # zurücksetzen
+    assert any("/plan/soc/90/" in p for _, p in srv.calls)                  # configured live: was written to evcc
+    # reset
     c.call("POST", "/api/override", {"key": arthur["key"], "mode": None, "target": None})
     st = wait_idle(c)
     assert st["desired"]["soc"] == 45
@@ -170,21 +170,21 @@ def test_event_without_address_can_be_planned_from_ui(web):
     assert c.call("POST", "/api/override", {"key": omi["key"], "mode": "car"})[0] == 202
     st = wait_idle(c)
     omi = next(i for i in st["items"] if i["key"] == omi["key"])
-    assert omi["status"] == "ziel_fehlt"                                    # Auto ohne Ort braucht ein Ziel
+    assert omi["status"] == "ziel_fehlt"                                    # car without a place needs a target
     c.call("POST", "/api/override", {"key": omi["key"], "mode": "car", "target": 60})
     st = wait_idle(c)
     omi = next(i for i in st["items"] if i["key"] == omi["key"])
     assert omi["status"] == "geplant" and omi["manual"] and omi["target_chain"] == 60
-    assert st["desired"]["soc"] == 60 and st["desired"]["time"] == "2026-10-11T10:45:00Z"   # 14:00 MESZ = 12:00 UTC, minus 45 und 30 min
+    assert st["desired"]["soc"] == 60 and st["desired"]["time"] == "2026-10-11T10:45:00Z"   # 14:00 CEST = 12:00 UTC, minus 45 and 30 min
 
 
 def test_personal_car_image_only_when_logged_in_and_falls_back(web, tmp_path):
     c, runner, srv, store, httpd = web
     cfg = runner.cfg
     cfg.personal_dir = str(tmp_path)
-    assert c.call("GET", "/api/personal/car")[0] == 401                    # nicht eingeloggt: nie ausliefern
+    assert c.call("GET", "/api/personal/car")[0] == 401                    # not logged in: never serve
     setup_login(c)
-    assert c.call("GET", "/api/personal/car")[0] == 404                    # noch kein eigenes Bild
+    assert c.call("GET", "/api/personal/car")[0] == 404                    # no custom image yet
     (tmp_path / "car.webp").write_bytes(b"RIFFxxxxWEBPfake")
     code, body, hdrs = c.call("GET", "/api/personal/car")
     assert code == 200 and hdrs["Content-Type"] == "image/webp" and body == b"RIFFxxxxWEBPfake"

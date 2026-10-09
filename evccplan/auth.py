@@ -1,7 +1,7 @@
-"""Einfache Anmeldung: ein fester Benutzer "admin", Passwort wird beim ersten Aufruf vergeben.
+"""Simple login: a single fixed user "admin"; the password is set on first use.
 
-Gespeichert wird nur ein PBKDF2-Hash. Sitzungs-Tokens liegen nur als SHA-256-Hash in der Datenbank.
-Passwort vergessen: state.db loeschen (setzt auch alle Vorgaben aus der Oberflaeche zurueck).
+Only a PBKDF2 hash is stored. Session tokens are stored in the database only as SHA-256 hashes.
+Forgot the password: delete state.db (this also resets all overrides set in the UI).
 """
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from typing import Optional
 USER = "admin"
 MIN_LENGTH = 8
 SESSION_DAYS = 30
-ITERATIONS = 600_000                 # OWASP-Empfehlung fuer PBKDF2-HMAC-SHA256; Tests duerfen niedriger setzen
-LOCK_AFTER = 5                       # Fehlversuche in Folge
+ITERATIONS = 600_000                 # OWASP recommendation for PBKDF2-HMAC-SHA256; tests may set it lower
+LOCK_AFTER = 5                       # consecutive failed attempts
 MAX_LOCK_S = 15 * 60
 
 
@@ -32,9 +32,9 @@ class Auth:
     def __init__(self, store, now=time.time):
         self.store, self.now = store, now
         self._lock = threading.Lock()
-        self._fails: dict = {}        # Client -> (Anzahl, gesperrt bis)
+        self._fails: dict = {}        # client -> (count, locked until)
 
-    # ------------------------------------------------------------ Zustand
+    # ------------------------------------------------------------ State
     def setup_needed(self) -> bool:
         return self.store.get("auth") is None
 
@@ -47,9 +47,9 @@ class Auth:
             return "Dieses Passwort ist zu einfach."
         return None
 
-    # ------------------------------------------------------------ Einrichten und Anmelden
+    # ------------------------------------------------------------ Setup and login
     def setup(self, password: str) -> Optional[str]:
-        """-> Session-Token oder None, wenn schon eingerichtet. Die Pruefung ist atomar."""
+        """-> session token, or None if already set up. The check is atomic."""
         with self._lock:
             if self.store.get("auth") is not None:
                 return None
@@ -81,7 +81,7 @@ class Auth:
                 self._fails[client] = (n, self.now() + lock if lock else 0.0)
         return self.new_session() if ok else None
 
-    # ------------------------------------------------------------ Sitzungen
+    # ------------------------------------------------------------ Sessions
     def new_session(self) -> str:
         token = secrets.token_urlsafe(32)
         self.store.sessions_prune()

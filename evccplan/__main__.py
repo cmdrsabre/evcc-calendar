@@ -1,4 +1,4 @@
-"""Einstieg: `python -m evccplan serve|once [--config PFAD]`."""
+"""Entry point: `python -m evccplan serve|once [--config PATH]`."""
 from __future__ import annotations
 
 import argparse
