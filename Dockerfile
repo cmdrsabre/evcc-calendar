@@ -1,4 +1,7 @@
 FROM python:3.12-slim
+LABEL org.opencontainers.image.source="https://github.com/cmdrsabre/evcc-calendar" \
+      org.opencontainers.image.description="Sets evcc charging plans from calendar appointments" \
+      org.opencontainers.image.licenses="MIT"
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=Europe/Berlin
 WORKDIR /app
 COPY requirements.txt .
