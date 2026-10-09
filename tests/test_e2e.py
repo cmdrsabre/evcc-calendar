@@ -383,3 +383,24 @@ def test_level_without_targets_is_reported_not_crashing(env):
 def test_config_notify_targets_parse():
     c = from_dict({"ha": {"notify_targets": {"info": "notify.x", "error": ["notify.x", "notify.y"]}}})
     assert c.notify_targets == {"info": ["notify.x"], "warning": [], "error": ["notify.x", "notify.y"]}
+
+
+# ------------------------------------------------------------ plan set but not reported as effective
+def _not_effective(runner, vehicle_soc):
+    now = datetime(2026, 10, 12, 6, 0, tzinfo=UTC)
+    notices = []
+    lp = {"effectivePlanId": 0, "vehicleSoc": vehicle_soc}
+    runner._check_effective({}, lp, {"soc": 50, "time": "2026-10-13T08:00:00Z"}, now, notices)
+    return [n for n in notices if n.key.startswith("noteffective")]
+
+
+def test_no_warning_when_battery_already_above_plan_target(env):
+    runner = env[2]
+    assert _not_effective(runner, 70) == []             # 70 % >= 50 %: plan is fine, nothing to charge
+    assert _not_effective(runner, 50) == []             # equal counts as reached
+
+
+def test_warning_when_plan_not_effective_and_battery_below_target(env):
+    runner = env[2]
+    assert len(_not_effective(runner, 40)) == 1
+    assert len(_not_effective(runner, None)) == 1       # unknown SoC: keep the warning
