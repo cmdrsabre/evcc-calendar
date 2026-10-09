@@ -5,6 +5,8 @@
 - New tab "Verlauf": the last 300 runs (including "Jetzt prüfen") with the result of each run.
 - New API endpoints `GET/POST /api/settings` and `GET /api/history` (login required).
 - Saving settings triggers a run in the configured mode.
+- Languages: English (default) and German for the UI, push messages and API errors, chosen with `language` in `config.yaml` or in the settings tab. Texts live in `evccplan/static/locales/<lang>.json`. **Existing installations that rely on German must set `language: de`.** Logs are English only.
+- The keywords "car" and "train" work like "Auto" and "Bahn".
 
 ## 0.2.4
 - Fix: no more warning "plan is not effective in evcc" when the battery is already at or above the plan target. evcc does not report such a plan as effective until the battery drops below the target, which is expected.

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Ladeplanung</title>
+<title data-i18n="ui.title">Ladeplanung</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/bricolage.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="app.css">
@@ -39,16 +39,16 @@
   <section class="auth-card">
     <div class="auth-art" id="auth-art"></div>
     <div class="auth-body">
-      <h1 class="brand"><svg class="ico"><use href="#i-bolt"/></svg>Ladeplanung</h1>
+      <h1 class="brand"><svg class="ico"><use href="#i-bolt"/></svg><span data-i18n="ui.title"></span></h1>
       <p id="auth-lead" class="lead"></p>
       <form id="auth-form" autocomplete="on">
-        <label class="field">Benutzer
+        <label class="field"><span data-i18n="ui.auth.user"></span>
           <input type="text" name="username" value="admin" autocomplete="username" readonly>
         </label>
-        <label class="field">Passwort
+        <label class="field"><span data-i18n="ui.auth.password"></span>
           <input type="password" id="pw1" name="password" required autocomplete="current-password" minlength="8">
         </label>
-        <label class="field" id="pw2-wrap" hidden>Passwort wiederholen
+        <label class="field" id="pw2-wrap" hidden><span data-i18n="ui.auth.password_repeat"></span>
           <input type="password" id="pw2" name="password2" autocomplete="new-password" minlength="8">
         </label>
         <p class="form-error" id="auth-error" role="alert" hidden></p>
@@ -61,30 +61,30 @@
 <!-- Main view -->
 <div id="view-main" hidden>
   <header class="top">
-    <h1 class="brand"><svg class="ico"><use href="#i-bolt"/></svg>Ladeplanung</h1>
+    <h1 class="brand"><svg class="ico"><use href="#i-bolt"/></svg><span data-i18n="ui.title"></span></h1>
     <div class="top-actions">
       <span class="chip" id="mode-chip"></span>
       <span class="stamp" id="stamp"></span>
-      <button class="btn ghost" id="btn-run" type="button" title="Rechnet alles neu. Es wird nichts in evcc geschrieben.">
-        <svg class="ico"><use href="#i-refresh"/></svg><span>Jetzt prüfen</span>
+      <button class="btn ghost" id="btn-run" type="button" data-i18n-title="ui.top.run_title">
+        <svg class="ico"><use href="#i-refresh"/></svg><span data-i18n="ui.top.run"></span>
       </button>
-      <button class="btn ghost" id="btn-logout" type="button" aria-label="Abmelden" title="Abmelden">
+      <button class="btn ghost" id="btn-logout" type="button" data-i18n-aria-label="ui.top.logout" data-i18n-title="ui.top.logout">
         <svg class="ico"><use href="#i-logout"/></svg>
       </button>
     </div>
   </header>
 
-  <nav class="tabs" id="tabs" aria-label="Bereiche">
-    <button type="button" data-tab="plan" aria-current="page">Termine</button>
-    <button type="button" data-tab="history">Verlauf</button>
-    <button type="button" data-tab="settings">Einstellungen</button>
+  <nav class="tabs" id="tabs" data-i18n-aria-label="ui.nav.label">
+    <button type="button" data-tab="plan" aria-current="page" data-i18n="ui.tab.plan"></button>
+    <button type="button" data-tab="history" data-i18n="ui.tab.history"></button>
+    <button type="button" data-tab="settings" data-i18n="ui.tab.settings"></button>
   </nav>
 
   <div class="layout" id="tab-plan">
-    <aside class="vehicle" id="vehicle" aria-label="Fahrzeug und nächster Ladeplan">
+    <aside class="vehicle" id="vehicle" data-i18n-aria-label="ui.vehicle.aria">
       <div class="car-art" id="car-art"></div>
-      <h2 id="v-title">Fahrzeug</h2>
-      <div class="soc"><span class="soc-num" id="v-soc">–</span><span class="soc-unit">%</span><span class="soc-label">Ladestand jetzt</span></div>
+      <h2 id="v-title" data-i18n="ui.vehicle.title"></h2>
+      <div class="soc"><span class="soc-num" id="v-soc">–</span><span class="soc-unit">%</span><span class="soc-label" data-i18n="ui.soc.label"></span></div>
       <div class="bar bar-lg" id="v-bar" role="img">
         <span class="fill" id="v-fill"></span>
         <span class="flag" id="v-flag" hidden><span class="flag-label" id="v-flag-label"></span></span>
@@ -93,40 +93,38 @@
       <div class="plan-box" id="plan-box"></div>
     </aside>
 
-    <section class="timeline" aria-label="Termine">
+    <section class="timeline" data-i18n-aria-label="ui.timeline.aria">
       <div class="alarm" id="alarm" role="alert" hidden></div>
       <div id="days"></div>
       <p class="empty" id="empty" hidden></p>
       <details class="notices" id="notices" hidden>
-        <summary><svg class="ico"><use href="#i-info"/></svg><span id="notices-title">Hinweise</span></summary>
+        <summary><svg class="ico"><use href="#i-info"/></svg><span id="notices-title"></span></summary>
         <ul id="notices-list"></ul>
       </details>
     </section>
   </div>
-  <section class="panel" id="tab-history" aria-label="Verlauf" hidden>
-    <h2>Verlauf der Läufe</h2>
-    <p class="hint">Die letzten Läufe, neueste zuerst. Jeder Lauf, auch „Jetzt prüfen“, steht hier.</p>
+  <section class="panel" id="tab-history" data-i18n-aria-label="ui.tab.history" hidden>
+    <h2 data-i18n="ui.hist.title"></h2>
+    <p class="hint" data-i18n="ui.hist.hint"></p>
     <ul class="runs" id="runs-list"></ul>
-    <p class="empty" id="runs-empty" hidden>Noch keine Läufe.</p>
+    <p class="empty" id="runs-empty" data-i18n="ui.hist.empty" hidden></p>
   </section>
 
-  <section class="panel" id="tab-settings" aria-label="Einstellungen" hidden>
-    <h2>Einstellungen</h2>
-    <p class="hint">Diese Werte überlagern die <code>config.yaml</code>. Zugangsdaten und Adressen lassen sich nur dort ändern.
-      Nach dem Speichern läuft sofort ein Lauf im konfigurierten Modus.</p>
+  <section class="panel" id="tab-settings" data-i18n-aria-label="ui.tab.settings" hidden>
+    <h2 data-i18n="ui.tab.settings"></h2>
+    <p class="hint" data-i18n-rich="ui.set.hint"></p>
     <form id="settings-form" autocomplete="off">
       <div id="settings-groups"></div>
       <fieldset class="group">
-        <legend>Regeln für Auto oder Bahn</legend>
-        <p class="hint">Ganze Wörter im Titel, Groß-/Kleinschreibung egal, <code>*</code> als Platzhalter (z. B. <code>firma*</code>).
-          Die Stichwörter „Auto“ und „Bahn“ im Termin gehen immer vor.</p>
+        <legend data-i18n="ui.rules.title"></legend>
+        <p class="hint" data-i18n-rich="ui.rules.hint"></p>
         <ul class="rules" id="rules-list"></ul>
-        <button class="btn ghost" id="rule-add" type="button">Regel hinzufügen</button>
+        <button class="btn ghost" id="rule-add" type="button" data-i18n="ui.rules.add"></button>
       </fieldset>
       <p class="form-error" id="settings-error" role="alert" hidden></p>
       <div class="form-actions">
-        <button class="btn primary" id="settings-save" type="submit">Speichern</button>
-        <button class="btn ghost" id="settings-reset" type="button">Auf config.yaml zurücksetzen</button>
+        <button class="btn primary" id="settings-save" type="submit" data-i18n="ui.set.save"></button>
+        <button class="btn ghost" id="settings-reset" type="button" data-i18n="ui.set.reset"></button>
       </div>
     </form>
   </section>

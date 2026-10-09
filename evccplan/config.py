@@ -120,15 +120,15 @@ def problems(c: Config) -> list:
     """Check required settings; messages contain no secrets."""
     out = []
     if not c.ha_url:
-        out.append("ha.url fehlt")
+        out.append("ha.url is missing")
     if not c.ha_token:
-        out.append("HA-Token fehlt (Umgebungsvariable aus ha.token_env)")
+        out.append("HA token is missing (environment variable from ha.token_env)")
     if not c.evcc_url:
-        out.append("evcc.url fehlt")
+        out.append("evcc.url is missing")
     if not c.evcc_key:
-        out.append("evcc-API-Key fehlt (Umgebungsvariable aus evcc.api_key_env)")
+        out.append("evcc API key is missing (environment variable from evcc.api_key_env)")
     if not c.ors_key:
-        out.append("ORS-Key fehlt (Umgebungsvariable aus ors.key_env)")
+        out.append("ORS key is missing (environment variable from ors.key_env)")
     if not c.home_known and not c.home_address:
-        out.append("home.lat/lon oder home.address fehlt")
+        out.append("home.lat/lon or home.address is missing")
     return out

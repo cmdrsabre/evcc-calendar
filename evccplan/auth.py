@@ -12,6 +12,8 @@ import threading
 import time
 from typing import Optional
 
+from .i18n import t
+
 USER = "admin"
 MIN_LENGTH = 8
 SESSION_DAYS = 30
@@ -38,13 +40,13 @@ class Auth:
     def setup_needed(self) -> bool:
         return self.store.get("auth") is None
 
-    def password_problem(self, password: str) -> Optional[str]:
+    def password_problem(self, password: str, lang: str = "en") -> Optional[str]:
         if not isinstance(password, str) or len(password) < MIN_LENGTH:
-            return "Das Passwort braucht mindestens %d Zeichen." % MIN_LENGTH
+            return t(lang, "api.password_too_short", min=MIN_LENGTH)
         if len(password) > 200:
-            return "Das Passwort ist zu lang."
+            return t(lang, "api.password_too_long")
         if password.lower() in (USER, "password", "passwort", "12345678"):
-            return "Dieses Passwort ist zu einfach."
+            return t(lang, "api.password_too_simple")
         return None
 
     # ------------------------------------------------------------ Setup and login

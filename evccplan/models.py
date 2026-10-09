@@ -25,8 +25,9 @@ class Event:
 class Classification:
     mode: Mode
     unclear: bool
-    reason: str
+    reason: str              # stable code: both | keyword_car | keyword_train | rule | default
     explicit: bool = False   # keyword car/train in the text (not rule/default)
+    reason_arg: str = ""     # e.g. the matching rule pattern for reason == "rule"
 
 
 @dataclass(frozen=True)
