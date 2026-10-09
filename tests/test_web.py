@@ -6,7 +6,7 @@ import urllib.request
 
 import pytest
 
-from evccplan import auth as authmod
+from evccplan import auth as authmod, i18n
 from evccplan.web import make_server
 
 from test_e2e import env, status_by_title  # noqa: F401  (reuse fixture and helpers)
@@ -71,7 +71,8 @@ def wait_idle(c, timeout=15):
 
 def test_first_call_sets_password_and_logs_in(web):
     c, *_ = web
-    assert c.call("GET", "/api/me")[1] == {"setup_needed": True, "authed": False, "min_password": 8}
+    assert c.call("GET", "/api/me")[1] == {"setup_needed": True, "authed": False, "min_password": 8,
+                                           "language": "de", "languages": i18n.available()}
     assert c.call("POST", "/api/setup", {"password": "kurz"})[0] == 400
     setup_login(c)
     me = c.call("GET", "/api/me")[1]
@@ -258,3 +259,25 @@ def test_history_records_runs(web):
     n = len(h["runs"])
     runner.run(force_dry=True)
     assert len(c.call("GET", "/api/history")[1]["runs"]) == n + 1
+
+
+def test_language_exposed_and_switchable(web):
+    c, runner, *_ = web
+    code, me, _ = c.call("GET", "/api/me")
+    assert me["language"] == "de" and "en" in me["languages"] and "de" in me["languages"]
+    assert c.call("GET", "/api/status")[0] == 401
+    setup_login(c)
+    assert c.call("GET", "/api/status")[1]["language"] == "de"
+    assert "en" in c.call("GET", "/api/settings")[1]["languages"]
+    assert c.call("POST", "/api/override", {"key": "x", "mode": "boese"})[1]["error"] == "Ungültige Angaben"
+    code, res, _ = c.call("POST", "/api/settings", {"values": {"language": "xx"}})
+    assert code == 400
+    code, res, _ = c.call("POST", "/api/settings", {"values": {"language": "en"}})
+    assert code == 200
+    assert c.call("GET", "/api/me")[1]["language"] == "en"
+    assert c.call("GET", "/api/status")[1]["language"] == "en"
+    assert c.call("POST", "/api/override", {"key": "x", "mode": "boese"})[1]["error"] == "Invalid values"
+    code, res, _ = c.call("POST", "/api/settings", {"values": {"warm": 1}})
+    assert code == 400 and "between" in res["error"]
+    code, res, _ = c.call("POST", "/api/settings", {"values": {"language": "xx"}})
+    assert code == 400 and res["error"] == "language: unknown language"

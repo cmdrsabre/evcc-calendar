@@ -47,7 +47,7 @@ def _request(method: str, url: str, headers: dict, body=None, timeout: float = 2
     try:
         return status, json.loads(raw.decode("utf-8"))
     except ValueError:
-        raise ApiError("%s %s%s: keine gültige JSON-Antwort" % (method, host, path)) from None
+        raise ApiError("%s %s%s: invalid JSON response" % (method, host, path)) from None
 
 
 def _utc(text: str) -> datetime:
@@ -173,7 +173,7 @@ class OrsClient:
             sm = d["features"][0]["properties"]["summary"]
             return Route(distance_km=sm["distance"] / 1000.0, duration_min=sm["duration"] / 60.0)
         except (KeyError, IndexError, TypeError):
-            raise ApiError("ORS directions: unerwartete Antwort") from None
+            raise ApiError("ORS directions: unexpected response") from None
 
 
 def straight_line_route(a: tuple, b: tuple, factor: float = 1.3, speed_kmh: float = 60.0) -> Route:

@@ -419,3 +419,12 @@ def test_set_confirmation_without_hint_when_battery_is_below_target(env):
     runner.run()
     msg = [m for m in srv.notified if m.startswith("Ladeplan gesetzt")][0]
     assert "kein weiteres Laden" not in msg
+
+
+def test_ors_outage_is_reported_once_in_every_language(env):
+    """The planner recognises the translated 'ORS unreachable' detail (no per-event notices)."""
+    from evccplan import i18n
+    for lang in i18n.available():
+        text = i18n.t(lang, "runner.ors_unreachable", detail="x")
+        prefix = i18n.t(lang, "runner.ors_unreachable", detail="").split("(")[0].strip()
+        assert text.startswith(prefix) and prefix

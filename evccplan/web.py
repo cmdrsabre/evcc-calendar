@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import __version__
+from . import __version__, i18n
 from .auth import MIN_LENGTH, SESSION_DAYS, Auth
 
 log = logging.getLogger("evccplan")
@@ -62,7 +62,7 @@ class RunRequester:
             try:
                 self.runner.run(force_dry=dry)
             except Exception:                                  # the runner catches errors itself; this is only a safeguard
-                log.exception("Lauf aus der Oberfläche fehlgeschlagen")
+                log.exception("Run from the web UI failed")
 
 
 def _bad_target(value) -> bool:
@@ -111,35 +111,38 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
                 parts.append("Secure")
             return {"Set-Cookie": "; ".join(parts)}
 
+        def T(self, key: str, **kw) -> str:
+            return i18n.t(cfg.language, key, **kw)
+
         def _client(self) -> str:
             return self.client_address[0]
 
         def _body(self):
             """Read the JSON body; None on error (the response has already been sent)."""
             if "application/json" not in (self.headers.get("Content-Type") or ""):
-                self._json(415, {"error": "JSON erwartet"})
+                self._json(415, {"error": self.T("api.json_expected")})
                 return None
             if self.headers.get("X-CSRF") != "1":
-                self._json(403, {"error": "Anfrage abgelehnt"})
+                self._json(403, {"error": self.T("api.request_rejected")})
                 return None
             origin = self.headers.get("Origin")
             if origin and urlsplit(origin).netloc != (self.headers.get("Host") or ""):
-                self._json(403, {"error": "Anfrage abgelehnt"})
+                self._json(403, {"error": self.T("api.request_rejected")})
                 return None
             try:
                 n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
                 n = -1
             if not 0 < n <= MAX_BODY:
-                self._json(400, {"error": "Ungültige Anfrage"})
+                self._json(400, {"error": self.T("api.invalid_request")})
                 return None
             try:
                 data = json.loads(self.rfile.read(n).decode("utf-8"))
             except ValueError:
-                self._json(400, {"error": "Ungültiges JSON"})
+                self._json(400, {"error": self.T("api.invalid_json")})
                 return None
             if not isinstance(data, dict):
-                self._json(400, {"error": "Ungültige Anfrage"})
+                self._json(400, {"error": self.T("api.invalid_request")})
                 return None
             return data
 
@@ -150,29 +153,30 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
                 return self._send(200, "text/plain", b"ok")
             if path == "/api/me":
                 return self._json(200, {"setup_needed": auth.setup_needed(), "authed": self._authed(),
-                                        "min_password": MIN_LENGTH})
+                                        "min_password": MIN_LENGTH, "language": cfg.language,
+                                        "languages": i18n.available()})
             if path == "/api/status":
                 if not self._authed():
-                    return self._json(401, {"error": "Anmeldung nötig"})
+                    return self._json(401, {"error": self.T("api.login_required")})
                 res = dict(runner.last() or {})
                 res.update({"busy": runner.busy() or runs.pending, "config_dry_run": cfg.dry_run,
                             "timezone": cfg.timezone, "reserve_soc": cfg.reserve_soc, "targets": TARGETS,
-                            "manual_drive_min": cfg.manual_drive_min, "version": __version__, "now": datetime.now(timezone.utc).isoformat()})
+                            "manual_drive_min": cfg.manual_drive_min, "language": cfg.language, "version": __version__, "now": datetime.now(timezone.utc).isoformat()})
                 return self._json(200, res)
             if path == "/api/settings":
                 if not self._authed():
-                    return self._json(401, {"error": "Anmeldung nötig"})
+                    return self._json(401, {"error": self.T("api.login_required")})
                 return self._json(200, self._settings_dict())
             if path == "/api/history":
                 if not self._authed():
-                    return self._json(401, {"error": "Anmeldung nötig"})
+                    return self._json(401, {"error": self.T("api.login_required")})
                 return self._json(200, {"runs": runner.store.runs(100)})
             if path == "/api/personal/car":
                 if not self._authed():
-                    return self._json(401, {"error": "Anmeldung nötig"})
+                    return self._json(401, {"error": self.T("api.login_required")})
                 return self._personal_car()
             if path.startswith("/api/"):
-                return self._json(404, {"error": "nicht gefunden"})
+                return self._json(404, {"error": self.T("api.not_found")})
             self._static(path)
 
         def _personal_car(self):
@@ -184,7 +188,7 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
                         return self._send(200, TYPES[f.suffix], f.read_bytes(), {"Cache-Control": "private, max-age=300"})
                 except OSError:
                     pass
-            self._json(404, {"error": "kein eigenes Bild"})
+            self._json(404, {"error": self.T("api.no_custom_image")})
 
         def _static(self, path: str):
             rel = "index.html" if path in ("/", "") else path.lstrip("/")
@@ -206,30 +210,30 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
                 return
             if path == "/api/setup":
                 if not auth.setup_needed():
-                    return self._json(409, {"error": "Das Passwort ist schon vergeben."})
+                    return self._json(409, {"error": self.T("api.password_already_set")})
                 pw = data.get("password")
-                problem = auth.password_problem(pw)
+                problem = auth.password_problem(pw, cfg.language)
                 if problem:
                     return self._json(400, {"error": problem})
                 token = auth.setup(pw)
                 if token is None:
-                    return self._json(409, {"error": "Das Passwort ist schon vergeben."})
-                log.info("Passwort für die Oberfläche wurde vergeben")
+                    return self._json(409, {"error": self.T("api.password_already_set")})
+                log.info("Web UI password has been set")
                 return self._json(200, {"ok": True}, self._cookie(token))
             if path == "/api/login":
                 wait = auth.locked_for(self._client())
                 if wait:
-                    return self._json(429, {"error": "Zu viele Versuche. Bitte in %d s erneut versuchen." % wait})
+                    return self._json(429, {"error": self.T("api.too_many_attempts", wait=wait)})
                 token = auth.login(data.get("password"), self._client())
                 if token is None:
-                    log.warning("Fehlgeschlagene Anmeldung von %s", self._client())
-                    return self._json(401, {"error": "Das Passwort stimmt nicht."})
+                    log.warning("Failed login from %s", self._client())
+                    return self._json(401, {"error": self.T("api.wrong_password")})
                 return self._json(200, {"ok": True}, self._cookie(token))
             if path == "/api/logout":
                 auth.logout(self._token())
                 return self._json(200, {"ok": True}, self._cookie("", clear=True))
             if not self._authed():
-                return self._json(401, {"error": "Anmeldung nötig"})
+                return self._json(401, {"error": self.T("api.login_required")})
             if path == "/api/run":
                 runs.request(force_dry=True)
                 return self._json(202, {"ok": True})
@@ -237,11 +241,12 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
                 return self._override(data)
             if path == "/api/settings":
                 return self._settings(data)
-            self._json(404, {"error": "nicht gefunden"})
+            self._json(404, {"error": self.T("api.not_found")})
 
         def _settings_dict(self) -> dict:
             st = runner.settings
-            return {"values": st.values(), "defaults": st.base, "changed": st.changed(), "limits": st.limits()}
+            return {"values": st.values(), "defaults": st.base, "changed": st.changed(), "limits": st.limits(),
+                    "languages": i18n.available()}
 
         def _settings(self, data: dict):
             try:
@@ -257,10 +262,10 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
         def _override(self, data: dict):
             key, mode, target = data.get("key"), data.get("mode"), data.get("target")
             if not isinstance(key, str) or mode not in (None, "car", "none") or _bad_target(target):
-                return self._json(400, {"error": "Ungültige Angaben"})
+                return self._json(400, {"error": self.T("api.invalid_values")})
             item = next((i for i in (runner.last() or {}).get("items") or [] if i.get("key") == key), None)
             if item is None:
-                return self._json(404, {"error": "Termin nicht mehr vorhanden. Bitte die Seite aktualisieren."})
+                return self._json(404, {"error": self.T("api.event_gone")})
             if target is not None and mode == "none":
                 mode = None                      # a target means: charge here
             runner.store.set_override(key, mode, target, item.get("title") or "", item.get("start") or "")

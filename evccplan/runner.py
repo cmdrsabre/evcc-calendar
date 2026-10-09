@@ -12,6 +12,7 @@ from .clients import (ApiError, EvccClient, EvccDown, HAClient, OrsClient, OrsDo
                       forecast_temperature, straight_line_route)
 from .models import Event
 from .config import Config
+from .i18n import t
 from .models import Notice, Route, override_key
 from .settings import Settings
 from .store import Store
@@ -34,6 +35,9 @@ class Runner:
         self._last_ok: dict = {}
         self._ors_down = False
 
+    def _t(self, key: str, **kw) -> str:
+        return t(self.cfg.language, "runner." + key, **kw)
+
     # ------------------------------------------------------------ Addresses and routes
     def _retry(self, fn, what: str, down_cls=ApiError):
         """Up to `retries` attempts with growing pauses; then down_cls."""
@@ -43,14 +47,14 @@ class Runner:
                 return fn()
             except ApiError as exc:
                 last = exc
-                log.warning("%s: Versuch %d/%d fehlgeschlagen (%s)", what, n + 1, self.cfg.retries, exc)
+                log.warning("%s: attempt %d/%d failed (%s)", what, n + 1, self.cfg.retries, exc)
                 if n < self.cfg.retries - 1 and self.cfg.retry_delay_s > 0:
                     time.sleep(self.cfg.retry_delay_s * (3 ** n))
-        raise down_cls("%s antwortet nicht (nach %d Versuchen): %s" % (what, self.cfg.retries, last))
+        raise down_cls(self._t("api_no_response", what=what, n=self.cfg.retries, detail=last))
 
     def _ors_call(self, fn):
         if self._ors_down:
-            raise OrsDown("OpenRouteService zuvor nicht erreichbar")
+            raise OrsDown(self._t("ors_previously_down"))
         try:
             return fn()
         except ApiError as exc:
@@ -64,10 +68,10 @@ class Runner:
         if cached:
             return tuple(cached)
         if not self.ors or not self.cfg.home_address:
-            raise ApiError("Heimatadresse fehlt")
+            raise ApiError(self._t("home_missing"))
         p = self._ors_call(lambda: self.ors.geocode(self.cfg.home_address))
         if not p:
-            raise ApiError("Heimatadresse nicht gefunden")
+            raise ApiError(self._t("home_not_found"))
         self.store.cache_put("home", [p.lat, p.lon])
         return (p.lat, p.lon)
 
@@ -84,7 +88,7 @@ class Runner:
     def resolve(self, event) -> tuple:
         """-> (Route|None, error text|None, place name)"""
         if not self.ors:
-            return None, "ORS-Key fehlt", ""
+            return None, self._t("ors_key_missing"), ""
         best_note = ""
         try:
             home = self._home()
@@ -94,11 +98,13 @@ class Runner:
                     continue
                 if g["layer"] in GOOD_LAYERS and g["confidence"] >= self.cfg.ors_min_confidence:
                     return self._route(home, (g["lat"], g["lon"])), None, g["label"]
-                best_note = best_note or "bester Treffer '%s' (Ebene %s, Sicherheit %.1f)" % (
-                    g["label"], g["layer"], g["confidence"])
+                best_note = best_note or self._t("best_hit", label=g["label"], layer=g["layer"],
+                                                 conf="%.1f" % g["confidence"])
         except OrsDown as exc:
-            return None, "ORS nicht erreichbar (%s)" % exc, ""
-        return None, "Adresse nicht eindeutig gefunden" + (": " + best_note if best_note else ""), ""
+            return None, self._t("ors_unreachable", detail=exc), ""
+        if best_note:
+            return None, self._t("address_unclear_note", note=best_note), ""
+        return None, self._t("address_unclear"), ""
 
     def _route(self, a: tuple, b: tuple) -> Route:
         key = "route:%.5f,%.5f>%.5f,%.5f" % (a + b)
@@ -108,7 +114,7 @@ class Runner:
         try:
             r = self.ors.route(a, b)
         except ApiError as exc:
-            log.warning("Routing fehlgeschlagen, nutze Luftlinie: %s", exc)
+            log.warning("Routing failed, using straight-line distance: %s", exc)
             return straight_line_route(a, b)
         self.store.cache_put(key, {"km": r.distance_km, "min": r.duration_min})
         return r
@@ -125,14 +131,13 @@ class Runner:
             try:
                 self._run(res, now, dry)
             except EvccDown as exc:
-                self._fail(res, exc, dry, Notice("evcc_down", "ALARM: evcc ist nicht erreichbar. %s Es wird nichts "
-                                                 "am Ladeplan geändert." % exc, ttl_hours=6, level="error"))
+                self._fail(res, exc, dry, Notice("evcc_down", self._t("evcc_down", detail=exc), ttl_hours=6, level="error"))
             except ApiError as exc:
-                self._fail(res, exc, dry, Notice("outage", "Ladeplanung gestört: %s" % exc, ttl_hours=12, level="error"))
+                self._fail(res, exc, dry, Notice("outage", self._t("outage", detail=exc), ttl_hours=12, level="error"))
             except Exception as exc:                               # never terminate the service
-                res["error"] = "Interner Fehler: %s" % exc
+                res["error"] = self._t("internal_error", detail=exc)
                 res["problems"].append(res["error"])
-                log.exception("Interner Fehler")
+                log.exception("Internal error")
             if res["ok"]:
                 self._last_ok = res
             elif self._last_ok and not res["items"]:               # also show the last good state
@@ -157,12 +162,12 @@ class Runner:
                 "notices": len(res.get("notices") or []), "problems": len(res.get("problems") or []),
             })
         except Exception:                                      # history must never break a run
-            log.exception("Verlauf konnte nicht gespeichert werden")
+            log.exception("Could not save run history")
 
     def _fail(self, res: dict, exc: Exception, dry: bool, notice: Notice) -> None:
         res["error"] = str(exc)
         res["problems"].append(str(exc))
-        log.error("Lauf abgebrochen: %s", exc)
+        log.error("Run aborted: %s", exc)
         self._send(res, [notice], dry)
 
     def busy(self) -> bool:
@@ -177,11 +182,11 @@ class Runner:
         vehicles = state.get("vehicles") or {}
         name = cfg.evcc_vehicle or (next(iter(vehicles)) if len(vehicles) == 1 else "")
         if name not in vehicles:
-            raise ApiError("Fahrzeug '%s' nicht in evcc gefunden (vorhanden: %s)" % (name, ", ".join(vehicles) or "-"))
+            raise ApiError(self._t("vehicle_not_found", name=name, available=", ".join(vehicles) or "-"))
         veh = vehicles[name]
         capacity = veh.get("capacity")
         if not capacity:
-            raise ApiError("evcc liefert keine Batteriekapazität für '%s'" % name)
+            raise ApiError(self._t("no_capacity", name=name))
         min_soc = float(veh.get("minSoc") or 0)
         lp = next((l for l in state.get("loadpoints") or [] if l.get("vehicleName") == name), {})
         res["vehicle"] = {"name": name, "title": veh.get("title") or name, "capacity": capacity,
@@ -201,15 +206,14 @@ class Runner:
                               self.store.overrides())
         notices = list(ev.notices) + cal_notices
         if self._ors_down:
-            res["problems"].append("OpenRouteService nicht erreichbar: Termine ohne gespeicherte Strecke werden nicht geplant")
-            notices.append(Notice("ors_down", "OpenRouteService ist nicht erreichbar. Termine ohne gespeicherte "
-                                  "Strecke werden nicht geplant.", ttl_hours=12))
+            res["problems"].append(self._t("ors_down_problem"))
+            notices.append(Notice("ors_down", self._t("ors_down_notice"), ttl_hours=12))
         if ev.desired:
             notices += planner.context_notices(ev.desired, veh.get("repeatingPlans"), lp.get("vehicleLimitSoc"),
                                                cfg, float(capacity), now)
         current = veh.get("plan") or None
         last_set = self.store.get("last_set")
-        action = planner.reconcile(ev.desired, current, last_set, now)
+        action = planner.reconcile(ev.desired, current, last_set, now, cfg.language)
         res["items"] = [_item_dict(i) for i in ev.items]
         res["desired"] = None if not ev.desired else {
             "title": ev.desired.item.event.title, "soc": ev.desired.soc, "time": _iso(ev.desired.time),
@@ -221,10 +225,9 @@ class Runner:
         if action.kind == "manual":
             ct = current.get("time")
             notices.append(Notice("manual:%s:%s" % (current.get("soc"), ct),
-                                  "In evcc steht ein manuell gesetzter Plan (%s %% bis %s). Der Dienst ändert ihn nicht. "
-                                  "Gewünscht wäre %d %% bis %s für '%s'." % (
-                                      current.get("soc"), ct, ev.desired.soc, _iso(ev.desired.time),
-                                      ev.desired.item.event.title)))
+                                  self._t("manual_plan", soc=current.get("soc"), time=ct,
+                                          want_soc="%d" % ev.desired.soc, want_time=_iso(ev.desired.time),
+                                          title=ev.desired.item.event.title)))
         if action.kind in ("set", "delete") and not dry:
             try:
                 if action.kind == "set":
@@ -234,23 +237,22 @@ class Runner:
                     self.evcc.delete_plan(name)
                     self.store.delete("last_set")
                 act["done"] = True
-                log.info("Aktion %s ausgeführt (%s)", action.kind, action.reason)
+                log.info("Action %s executed (%s)", action.kind, action.reason)
                 if action.kind == "set":
-                    text = "Ladeplan gesetzt: %d %% bis %s für '%s'." % (
-                        ev.desired.soc, planner._fmt(ev.desired.time, cfg.timezone), ev.desired.item.event.title)
+                    text = self._t("plan_set", soc="%d" % ev.desired.soc, time=planner._fmt(ev.desired.time, cfg.timezone),
+                                  title=ev.desired.item.event.title)
                     soc_now = lp.get("vehicleSoc")
                     if isinstance(soc_now, (int, float)) and soc_now >= ev.desired.soc:
-                        text += (" Nach dem aktuellen Ladestand (%d %%) ist kein weiteres Laden nötig. "
-                                 "Der Plan greift, falls der Ladestand darunter sinkt." % round(soc_now))
+                        text += " " + self._t("plan_set_no_charge_needed", soc="%d" % round(soc_now))
                     notices.append(Notice("set:%d:%s" % (ev.desired.soc, _iso(ev.desired.time)), text, level="info"))
                 else:
                     notices.append(Notice("del:%s" % (last_set or {}).get("time"),
-                                          "Ladeplan entfernt: Der zugehörige Termin existiert nicht mehr.", level="info"))
+                                          self._t("plan_removed"), level="info"))
             except ApiError as exc:
                 act["error"] = str(exc)
-                notices.append(Notice("evccwrite", "Plan konnte nicht in evcc gesetzt werden: %s" % exc, ttl_hours=6, level="error"))
+                notices.append(Notice("evccwrite", self._t("evcc_write_failed", detail=exc), ttl_hours=6, level="error"))
         elif action.kind in ("set", "delete"):
-            log.info("Dry-Run: Aktion %s (%s) nicht ausgeführt", action.kind, action.reason)
+            log.info("Dry run: action %s (%s) not executed", action.kind, action.reason)
 
         self._check_effective(res, lp, last_set if action.kind == "none" else None, now, notices)
         self._send(res, notices, dry)
@@ -261,7 +263,7 @@ class Runner:
         """Read the calendar; on failure continue with the last state read."""
         end = now + timedelta(days=self.cfg.horizon_days)
         try:
-            events = self._retry(lambda: self.ha.calendar_events(self.cfg.ha_calendar, now, end), "Home Assistant (Kalender)")
+            events = self._retry(lambda: self.ha.calendar_events(self.cfg.ha_calendar, now, end), "Home Assistant (calendar)")
         except ApiError as exc:
             cache = self.store.get("events_cache")
             if not cache:
@@ -271,8 +273,7 @@ class Runner:
                       for d in cache["events"]]
             events = [e for e in events if now <= e.start <= end]
             res["stale_since"] = cache["time"]
-            msg = ("Kalender nicht lesbar, Planung nach Stand vom %s (%s)"
-                   % (cache["time"], exc))
+            msg = self._t("calendar_down", time=cache["time"], detail=exc)
             res["problems"].append(msg)
             log.error(msg)
             return events, [Notice("calendar_down", msg, ttl_hours=6, level="error")]
@@ -301,8 +302,7 @@ class Runner:
             return                          # battery is already at or above the target: evcc has nothing to charge, not a fault
         if t and eid == 0 and t - now < timedelta(days=2):
             notices.append(Notice("noteffective:%s" % last_set["time"],
-                                  "Der gesetzte Plan (%s %% bis %s) ist in evcc nicht wirksam." % (
-                                      last_set["soc"], last_set["time"]), ttl_hours=12))
+                                  self._t("not_effective", soc=last_set["soc"], time=last_set["time"]), ttl_hours=12))
 
     def _send(self, res: dict, notices: list, dry: bool) -> None:
         seen = set()
@@ -312,23 +312,23 @@ class Runner:
             seen.add(n.key)
             entry = {"text": n.text, "status": "", "level": n.level}
             if self.store.was_notified(n.key, n.ttl_hours):
-                entry["status"] = "bereits gemeldet"
+                entry["status"] = self._t("status_already")
             elif dry:
-                entry["status"] = "Dry-Run: würde senden"
+                entry["status"] = self._t("status_dry")
             elif not self.cfg.notify_targets.get(n.level):
-                entry["status"] = "kein Ziel für Stufe %s konfiguriert" % n.level
+                entry["status"] = self._t("status_no_target", level=n.level)
             else:
                 try:
-                    title = {"info": "Ladeplanung", "warning": "Ladeplanung: Warnung", "error": "Ladeplanung: FEHLER"}[n.level]
+                    title = self._t("push_title_" + n.level)
                     self.ha.notify(self.cfg.notify_targets[n.level], title, n.text)
                     self.store.mark_notified(n.key)
-                    entry["status"] = "gesendet"
+                    entry["status"] = self._t("status_sent")
                 except ApiError as exc:
-                    entry["status"] = "Senden fehlgeschlagen: %s" % exc
-                    msg = "Push über Home Assistant nicht möglich: %s" % exc
+                    entry["status"] = self._t("status_failed", detail=exc)
+                    msg = self._t("push_failed", detail=exc)
                     if msg not in res["problems"]:
                         res["problems"].append(msg)
-                    log.error("%s | Hinweis: %s", msg, n.text)
+                    log.error("%s | notice: %s", msg, n.text)
             res["notices"].append(entry)
 
 
