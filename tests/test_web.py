@@ -197,3 +197,64 @@ def test_personal_path_defaults_next_to_database():
     from evccplan.config import Config
     assert Config(db_path="/data/state.db").personal_path == "/data/personal"
     assert Config(db_path="/data/state.db", personal_dir="/x").personal_path == "/x"
+
+
+# ------------------------------------------------------------ 0.3: settings and history
+def test_settings_need_login(web):
+    c, *_ = web
+    assert c.call("GET", "/api/settings")[0] == 401
+    assert c.call("GET", "/api/history")[0] == 401
+    assert c.call("POST", "/api/settings", {"values": {"reserve_soc": 5}})[0] == 401
+
+
+def test_settings_change_persist_and_reset(web):
+    c, runner, srv, store, _ = web
+    setup_login(c)
+    code, s, _ = c.call("GET", "/api/settings")
+    assert code == 200 and s["changed"] == [] and s["values"]["reserve_soc"] == s["defaults"]["reserve_soc"]
+    base_reserve = s["values"]["reserve_soc"]
+    code, s, _ = c.call("POST", "/api/settings", {"values": {"reserve_soc": 25, "rules": [{"match": "Firma*", "mode": "bahn"}]}})
+    assert code == 200 and s["values"]["reserve_soc"] == 25 and s["changed"] == ["reserve_soc", "rules"]
+    assert runner.cfg.reserve_soc == 25 and runner.cfg.rules[0].match == "Firma*"
+    assert store.get("settings")["reserve_soc"] == 25                    # persisted
+    wait_idle(c)
+    code, s, _ = c.call("POST", "/api/settings", {"reset": True})
+    assert s["changed"] == [] and runner.cfg.reserve_soc == base_reserve
+    assert store.get("settings") is None
+    wait_idle(c)
+
+
+@pytest.mark.parametrize("values", [
+    {"reserve_soc": -1}, {"reserve_soc": 99}, {"reserve_soc": "10"}, {"reserve_soc": True},
+    {"unclear_cap_soc": 80.5}, {"db_path": "/tmp/x"}, {"ha_url": "http://x"}, {"rules": "fritz"},
+    {"rules": [{"match": "x;y", "mode": "auto"}]}, {"rules": [{"match": "uni", "mode": "zug"}]},
+    {"rules": [{"match": "***", "mode": "auto"}]}, {"rules": [{"match": "a", "mode": "auto"}] * 51},
+])
+def test_settings_reject_invalid_values(web, values):
+    c, runner, *_ = web
+    setup_login(c)
+    before = runner.settings.values()
+    assert c.call("POST", "/api/settings", {"values": values})[0] == 400
+    assert runner.settings.values() == before
+
+
+def test_settings_survive_restart(env):
+    from evccplan.runner import Runner
+    srv, cfg, runner, state, ors, store = env
+    orig = cfg.warm
+    runner.settings.update({"warm": 21.5})
+    cfg.warm = orig                                  # a restart reloads config.yaml
+    again = Runner(cfg, store, runner.ha, runner.evcc, runner.ors, runner.now_fn)
+    assert again.cfg.warm == 21.5 and again.settings.changed() == ["warm"]
+
+
+def test_history_records_runs(web):
+    c, runner, *_ = web
+    setup_login(c)
+    code, h, _ = c.call("GET", "/api/history")
+    assert code == 200 and h["runs"], "the fixture run is recorded"
+    first = h["runs"][0]
+    assert first["ok"] is True and set(first) >= {"time", "dry_run", "action", "soc", "title", "problems"}
+    n = len(h["runs"])
+    runner.run(force_dry=True)
+    assert len(c.call("GET", "/api/history")[1]["runs"]) == n + 1

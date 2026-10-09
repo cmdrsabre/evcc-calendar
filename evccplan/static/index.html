@@ -74,7 +74,13 @@
     </div>
   </header>
 
-  <div class="layout">
+  <nav class="tabs" id="tabs" aria-label="Bereiche">
+    <button type="button" data-tab="plan" aria-current="page">Termine</button>
+    <button type="button" data-tab="history">Verlauf</button>
+    <button type="button" data-tab="settings">Einstellungen</button>
+  </nav>
+
+  <div class="layout" id="tab-plan">
     <aside class="vehicle" id="vehicle" aria-label="Fahrzeug und nächster Ladeplan">
       <div class="car-art" id="car-art"></div>
       <h2 id="v-title">Fahrzeug</h2>
@@ -97,6 +103,34 @@
       </details>
     </section>
   </div>
+  <section class="panel" id="tab-history" aria-label="Verlauf" hidden>
+    <h2>Verlauf der Läufe</h2>
+    <p class="hint">Die letzten Läufe, neueste zuerst. Jeder Lauf, auch „Jetzt prüfen“, steht hier.</p>
+    <ul class="runs" id="runs-list"></ul>
+    <p class="empty" id="runs-empty" hidden>Noch keine Läufe.</p>
+  </section>
+
+  <section class="panel" id="tab-settings" aria-label="Einstellungen" hidden>
+    <h2>Einstellungen</h2>
+    <p class="hint">Diese Werte überlagern die <code>config.yaml</code>. Zugangsdaten und Adressen lassen sich nur dort ändern.
+      Nach dem Speichern läuft sofort ein Lauf im konfigurierten Modus.</p>
+    <form id="settings-form" autocomplete="off">
+      <div id="settings-groups"></div>
+      <fieldset class="group">
+        <legend>Regeln für Auto oder Bahn</legend>
+        <p class="hint">Ganze Wörter im Titel, Groß-/Kleinschreibung egal, <code>*</code> als Platzhalter (z. B. <code>firma*</code>).
+          Die Stichwörter „Auto“ und „Bahn“ im Termin gehen immer vor.</p>
+        <ul class="rules" id="rules-list"></ul>
+        <button class="btn ghost" id="rule-add" type="button">Regel hinzufügen</button>
+      </fieldset>
+      <p class="form-error" id="settings-error" role="alert" hidden></p>
+      <div class="form-actions">
+        <button class="btn primary" id="settings-save" type="submit">Speichern</button>
+        <button class="btn ghost" id="settings-reset" type="button">Auf config.yaml zurücksetzen</button>
+      </div>
+    </form>
+  </section>
+
   <footer class="foot"><span id="version"></span></footer>
 </div>
 

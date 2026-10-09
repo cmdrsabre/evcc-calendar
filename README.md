@@ -62,6 +62,11 @@ Each message is sent only once per occasion.
   (it sets `X-Forwarded-Proto: https`, and the cookie is then marked `Secure`).
 - Images are optional.
 
+### Settings and history (v0.3)
+- The **Einstellungen** tab edits consumption values, reserve, charge power, trip limits and the car/train rules. Changed values are stored in the database
+  and win over `config.yaml`; "Auf config.yaml zurücksetzen" removes them. URLs, tokens and keys are not editable in the UI.
+- The **Verlauf** tab lists the last 300 runs with their result. Deleting `state.db` also clears settings and history.
+
 ## Your own vehicle image
 The bundled blue car (`evccplan/static/img/car.webp`) is the default. Your own image overrides it without changing any project file:
 
@@ -83,8 +88,8 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 | Version | Content | Status |
 |---|---|---|
 | 0.1 | Read calendar, set plan in evcc, dry run, push via Home Assistant, simple status page | done |
-| 0.2 | Login, per-appointment overrides (car / no car / charge target), new UI, images, Docker image on ghcr.io | current |
-| 0.3 | More functions in the UI: edit rules and consumption values, history, live run button, Bluelink consumption, filter for wrongly entered appointments | planned |
+| 0.2 | Login, per-appointment overrides (car / no car / charge target), new UI, images, Docker image on ghcr.io | done |
+| 0.3 | More functions in the UI: edit rules and consumption values, history (done in 0.3.0); live run button, Bluelink consumption, filter for wrongly entered appointments (planned) | current |
 | 0.4 | Google OAuth login, Home Assistant optional (calendar directly via Google, other notification channels) | planned |
 
 ## License
