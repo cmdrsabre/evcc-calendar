@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.4
+- Fix: no more warning "plan is not effective in evcc" when the battery is already at or above the plan target. evcc does not report such a plan as effective until the battery drops below the target, which is expected.
+
 ## 0.2.3
 - Docker image carries OCI labels (source repository, description, license), so the GitHub package is linked to the repo.
 - Unraid template (`templates/evcc-calendar.xml`) and icon.
