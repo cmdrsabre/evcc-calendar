@@ -24,7 +24,7 @@ def test_rules_match_words_not_substrings():
     assert classify("Max bei Firma!", "", RULES).mode == Mode.BAHN
     assert classify("Lisa Uni", "", RULES) .unclear is False
     assert classify("Universität Besuch", "", RULES).unclear is False
-    assert classify("Munition", "", RULES).reason == "Standard: Auto"   # no Uni match
+    assert classify("Munition", "", RULES).reason == "default"   # no Uni match
 
 
 def test_keyword_beats_rule():
@@ -34,7 +34,7 @@ def test_keyword_beats_rule():
 def test_multiword_rule():
     r = [Rule("vhs ludwigsfelde", Mode.AUTO)]
     assert classify("Kurs VHS Musterstadt heute", "", r).unclear is False
-    assert classify("VHS Berlin", "", r).reason == "Standard: Auto"
+    assert classify("VHS Berlin", "", r).reason == "default"
 
 
 @pytest.mark.parametrize("text,first", [
@@ -73,3 +73,10 @@ def test_calc_basics():
     assert calc.charge_gain_soc(2, 54, 11, 0.15) == pytest.approx(34.63, abs=0.01)
     assert calc.charge_gain_soc(-1, 54, 11, 0.15) == 0
     assert calc.hours_to_charge(40, 54, 11, 0.15) == pytest.approx(2.31, abs=0.01)
+
+
+def test_english_keywords_work_like_german_ones():
+    assert classify("Meeting by car", "", []).reason == "keyword_car"
+    assert classify("Meeting by train", "", []).mode.value == "bahn"
+    c = classify("car or train", "", [])
+    assert c.unclear and c.mode.value == "auto"

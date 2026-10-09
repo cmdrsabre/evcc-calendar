@@ -8,6 +8,7 @@ import re
 from typing import Optional
 
 from . import i18n
+from .i18n import t
 from .classify import Rule
 from .models import Mode
 
@@ -24,49 +25,49 @@ MAX_RULES = 50
 _PATTERN = re.compile(r"^[\w*\- ]{1,40}$", re.UNICODE)
 
 
-def _number(name: str, value):
+def _number(name: str, value, lang: str = "en"):
     kind, lo, hi = FIELDS[name]
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError("%s: Zahl erwartet" % name)
+        raise ValueError(t(lang, "api.set_number_expected", name=name))
     if kind is int and value != int(value):
-        raise ValueError("%s: ganze Zahl erwartet" % name)
+        raise ValueError(t(lang, "api.set_int_expected", name=name))
     if not lo <= value <= hi:
-        raise ValueError("%s: Wert zwischen %g und %g erwartet" % (name, lo, hi))
+        raise ValueError(t(lang, "api.set_range", name=name, lo="%g" % lo, hi="%g" % hi))
     return kind(value)
 
 
-def _rules(value) -> list:
+def _rules(value, lang: str = "en") -> list:
     if not isinstance(value, list) or len(value) > MAX_RULES:
-        raise ValueError("rules: Liste mit höchstens %d Einträgen erwartet" % MAX_RULES)
+        raise ValueError(t(lang, "api.set_rules_list", max=MAX_RULES))
     out = []
     for r in value:
         if not isinstance(r, dict) or not isinstance(r.get("match"), str):
-            raise ValueError("rules: Eintrag ungültig")
+            raise ValueError(t(lang, "api.set_rules_entry"))
         match = " ".join(r["match"].split())
         if not _PATTERN.match(match) or not match.replace("*", "").strip():
-            raise ValueError("rules: Suchwort '%s' ist ungültig" % r["match"][:40])
+            raise ValueError(t(lang, "api.set_rules_match", match=r["match"][:40]))
         if r.get("mode") not in ("auto", "bahn"):
-            raise ValueError("rules: Modus muss auto oder bahn sein")
+            raise ValueError(t(lang, "api.set_rules_mode"))
         out.append({"match": match, "mode": r["mode"]})
     return out
 
 
-def validate(data) -> dict:
+def validate(data, lang: str = "en") -> dict:
     """Checks a (partial) settings dict. Raises ValueError with a readable message."""
     if not isinstance(data, dict):
-        raise ValueError("Ungültige Angaben")
+        raise ValueError(t(lang, "api.invalid_values"))
     out = {}
     for k, v in data.items():
         if k == "rules":
-            out[k] = _rules(v)
+            out[k] = _rules(v, lang)
         elif k == "language":
             if v not in i18n.available():
-                raise ValueError("language: unknown language")
+                raise ValueError(t(lang, "api.set_language_unknown"))
             out[k] = v
         elif k in FIELDS:
-            out[k] = _number(k, v)
+            out[k] = _number(k, v, lang)
         else:
-            raise ValueError("Unbekannte Einstellung: %s" % str(k)[:40])
+            raise ValueError(t(lang, "api.set_unknown", name=str(k)[:40]))
     return out
 
 
@@ -101,7 +102,7 @@ class Settings:
         return sorted(k for k, v in self.values().items() if v != self.base[k])
 
     def update(self, data: dict) -> None:
-        clean = validate(data)
+        clean = validate(data, self.cfg.language)
         stored = dict(self.store.get("settings") or {})
         stored.update(clean)
         self.store.put("settings", stored)

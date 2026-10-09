@@ -6,7 +6,7 @@
   const SVGNS = 'http://www.w3.org/2000/svg';
   const CAR_SVG = '<svg viewBox="0 0 320 120" aria-hidden="true"><path d="M14 86c0-9 4-15 12-18l34-10c10-14 22-24 40-30 20-6 52-6 76-2 28 5 44 18 60 34l44 8c14 3 26 8 32 16 5 7 4 12 4 16H14z"/><path class="glass" d="M82 56c8-9 16-16 30-19 20-4 40-3 56 0v21H82zM178 38c14 3 26 10 38 20h-38z"/><circle class="tyre" cx="84" cy="100" r="17"/><circle class="tyre" cx="244" cy="100" r="17"/><circle class="rim" cx="84" cy="100" r="7"/><circle class="rim" cx="244" cy="100" r="7"/></svg>';
 
-  const S = { tab: 'plan', settings: null, status: null, pending: {}, cards: new Map(), sig: '', tz: 'Europe/Berlin', timer: null, fmt: null, targets: [] };
+  const S = { tab: 'plan', settings: null, status: null, pending: {}, cards: new Map(), sig: '', tz: 'Europe/Berlin', timer: null, fmt: null, targets: [], lang: null, dict: {}, fallback: {}, languages: [] };
 
   // ------------------------------------------------------------ Helpers
   function icon(name) {
@@ -26,7 +26,64 @@
     return e;
   }
 
-  const num = (v) => (v < 10 ? v.toFixed(1) : String(Math.round(v))).replace('.', ',');
+  // ------------------------------------------------------------ Translations
+  const LOCALES = { en: 'en-GB', de: 'de-DE' };
+  const locale = () => LOCALES[S.lang] || S.lang || 'en-GB';
+
+  function t(key, params) {
+    let s = S.dict[key];
+    if (s == null) s = S.fallback[key];
+    if (s == null) s = key;
+    if (!params) return s;
+    return s.replace(/\{(\w+)\}/g, (m, name) => (name in params ? String(params[name]) : m));
+  }
+
+  async function fetchStrings(lang) {
+    try {
+      const r = await fetch('/locales/' + encodeURIComponent(lang) + '.json', { credentials: 'same-origin' });
+      if (r.ok) return await r.json();
+    } catch (e) { /* empty */ }
+    return null;
+  }
+
+  // Loads the strings of a language (English as fallback) and re-renders everything.
+  async function setLang(lang) {
+    lang = lang || 'en';
+    if (!S.fallback || !Object.keys(S.fallback).length) S.fallback = (await fetchStrings('en')) || {};
+    S.dict = lang === 'en' ? S.fallback : ((await fetchStrings(lang)) || {});
+    const changed = S.lang !== lang;
+    S.lang = lang;
+    document.documentElement.lang = lang;
+    applyI18n();
+    if (!changed) return;
+    // Language switch: formatters, keyed cards and settings form must be rebuilt.
+    S.cards.clear(); S.sig = ''; $('days').replaceChildren();
+    S.inputs = null;
+    if (S.fmt) S.fmt = makeFormatters(S.tz);
+    if (S.status) render(S.status);
+    if (!$('view-main').hidden) {
+      if (S.tab === 'history') loadHistory();
+      if (S.tab === 'settings') loadSettings();
+    }
+  }
+
+  // Text with `code` segments: built from text nodes and <code> elements only.
+  function setRich(node, text) {
+    node.replaceChildren();
+    text.split('`').forEach((part, i) => { if (part) node.append(i % 2 ? el('code', null, part) : part); });
+  }
+
+  function applyI18n() {
+    document.querySelectorAll('[data-i18n]').forEach((n) => { n.textContent = t(n.dataset.i18n); });
+    document.querySelectorAll('[data-i18n-rich]').forEach((n) => setRich(n, t(n.dataset.i18nRich)));
+    document.querySelectorAll('[data-i18n-title]').forEach((n) => { n.title = t(n.dataset.i18nTitle); });
+    document.querySelectorAll('[data-i18n-aria-label]').forEach((n) => { n.setAttribute('aria-label', t(n.dataset.i18nAriaLabel)); });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((n) => { n.placeholder = t(n.dataset.i18nPlaceholder); });
+    document.title = t('ui.title');
+    if (S.status) { $('version').textContent = S.status.version ? t('ui.version', { v: S.status.version }) : ''; }
+  }
+
+  const num = (v) => { const x = v < 10 ? v.toFixed(1) : String(Math.round(v)); return S.lang === 'de' ? x.replace('.', ',') : x; };
 
   async function api(method, path, body) {
     const opt = { method, credentials: 'same-origin', headers: {} };
@@ -36,7 +93,7 @@
       opt.body = JSON.stringify(body || {});
     }
     let r;
-    try { r = await fetch(path, opt); } catch (e) { return { ok: false, status: 0, data: { error: 'Der Dienst ist nicht erreichbar.' } }; }
+    try { r = await fetch(path, opt); } catch (e) { return { ok: false, status: 0, data: { error: t('ui.err.unreachable') } }; }
     let data = null;
     try { data = await r.json(); } catch (e) { /* empty */ }
     return { ok: r.ok, status: r.status, data: data || {} };
@@ -67,7 +124,7 @@
   }
 
   function makeFormatters(tz) {
-    const f = (o) => new Intl.DateTimeFormat('de-DE', Object.assign({ timeZone: tz }, o));
+    const f = (o) => new Intl.DateTimeFormat(locale(), Object.assign({ timeZone: tz }, o));
     return {
       time: f({ hour: '2-digit', minute: '2-digit' }),
       dayKey: new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }),
@@ -86,10 +143,8 @@
     art($('auth-art'), 'img/car.webp');
     const form = $('auth-form');
     form.dataset.mode = setupNeeded ? 'setup' : 'login';
-    $('auth-lead').textContent = setupNeeded
-      ? 'Willkommen. Lege jetzt das Passwort für den Benutzer „admin“ fest. Es gilt für diese Oberfläche und lässt sich nur durch Löschen der Datenbank zurücksetzen.'
-      : 'Melde dich an, um Termine und Ladeziele zu ändern.';
-    $('auth-submit').textContent = setupNeeded ? 'Passwort festlegen' : 'Anmelden';
+    $('auth-lead').textContent = t(setupNeeded ? 'ui.auth.lead_setup' : 'ui.auth.lead_login');
+    $('auth-submit').textContent = t(setupNeeded ? 'ui.auth.submit_setup' : 'ui.auth.submit_login');
     $('pw2-wrap').hidden = !setupNeeded;
     $('pw2').required = setupNeeded;
     $('pw1').autocomplete = setupNeeded ? 'new-password' : 'current-password';
@@ -103,18 +158,25 @@
     ev.preventDefault();
     const setup = $('auth-form').dataset.mode === 'setup';
     const err = (m) => { $('auth-error').textContent = m; $('auth-error').hidden = false; };
-    if (setup && $('pw1').value !== $('pw2').value) return err('Die beiden Passwörter sind nicht gleich.');
+    if (setup && $('pw1').value !== $('pw2').value) return err(t('ui.auth.mismatch'));
     $('auth-submit').disabled = true;
     const r = await api('POST', setup ? '/api/setup' : '/api/login', { password: $('pw1').value });
     $('auth-submit').disabled = false;
-    if (!r.ok) return err(r.data.error || 'Das hat nicht geklappt.');
+    if (!r.ok) return err(r.data.error || t('ui.err.generic'));
     startMain();
   }
 
   async function boot() {
     const r = await api('GET', '/api/me');
+    await applyServerLang(r.data);
     if (r.ok && r.data.authed) return startMain();
     showAuth(!!r.data.setup_needed, r.data.min_password);
+  }
+
+  async function applyServerLang(data) {
+    if (Array.isArray(data.languages)) S.languages = data.languages;
+    if (data.language && data.language !== S.lang) await setLang(data.language);
+    else if (!S.lang) await setLang('en');
   }
 
   // ------------------------------------------------------------ Main view
@@ -128,12 +190,13 @@
   async function refresh() {
     clearTimeout(S.timer);
     const r = await api('GET', '/api/status');
-    if (r.status === 401) { const me = await api('GET', '/api/me'); return showAuth(!!me.data.setup_needed, me.data.min_password); }
+    if (r.status === 401) { const me = await api('GET', '/api/me'); await applyServerLang(me.data); return showAuth(!!me.data.setup_needed, me.data.min_password); }
     if (r.ok) {
       if (!r.data.busy) S.pending = {};
+      if (r.data.language && r.data.language !== S.lang) { S.status = null; await applyServerLang(r.data); }
       render(r.data);
     } else {
-      toast(r.data.error || 'Der Stand konnte nicht geladen werden.', true);
+      toast(r.data.error || t('ui.err.status_load'), true);
     }
     if (S.tab === 'history' && r.ok && !r.data.busy) loadHistory();
     const busy = r.ok && r.data.busy;
@@ -143,19 +206,19 @@
   }
 
   const STATUS = {
-    geplant: ['Wird geplant', 'plan', 'bolt', 'is-plan'],
-    verkettet: ['Folgetermin', '', 'car', ''],
-    spaeter: ['Später', '', 'clock', 'is-dim'],
-    bahn: ['Bahn', '', 'train', 'is-bahn is-dim'],
-    nah: ['Zu Fuß oder Rad', '', 'walk', 'is-walk is-dim'],
-    kein_ort: ['Ohne Ort', '', 'pin', 'is-off is-dim'],
-    adresse_unklar: ['Adresse unklar', 'warn', 'alert', ''],
-    zu_spaet: ['Abfahrt vorbei', '', 'clock', 'is-dim'],
-    unter_min: ['Unter evcc-Minimum', '', 'info', ''],
-    ueberschneidung: ['Überschneidung', 'warn', 'alert', ''],
-    manuell_aus: ['Kein Auto', '', 'ban', 'is-off is-dim'],
-    ziel_fehlt: ['Ziel fehlt', 'bad', 'alert', ''],
-    auto: ['Auto', '', 'car', ''],
+    geplant: ['ui.status.geplant', 'plan', 'bolt', 'is-plan'],
+    verkettet: ['ui.status.verkettet', '', 'car', ''],
+    spaeter: ['ui.status.spaeter', '', 'clock', 'is-dim'],
+    bahn: ['ui.status.bahn', '', 'train', 'is-bahn is-dim'],
+    nah: ['ui.status.nah', '', 'walk', 'is-walk is-dim'],
+    kein_ort: ['ui.status.kein_ort', '', 'pin', 'is-off is-dim'],
+    adresse_unklar: ['ui.status.adresse_unklar', 'warn', 'alert', ''],
+    zu_spaet: ['ui.status.zu_spaet', '', 'clock', 'is-dim'],
+    unter_min: ['ui.status.unter_min', '', 'info', ''],
+    ueberschneidung: ['ui.status.ueberschneidung', 'warn', 'alert', ''],
+    manuell_aus: ['ui.status.manuell_aus', '', 'ban', 'is-off is-dim'],
+    ziel_fehlt: ['ui.status.ziel_fehlt', 'bad', 'alert', ''],
+    auto: ['ui.status.auto', '', 'car', ''],
   };
 
   function render(res) {
@@ -163,7 +226,7 @@
     S.tz = res.timezone || S.tz;
     S.fmt = makeFormatters(S.tz);
     S.targets = res.targets || [];
-    $('version').textContent = res.version ? 'Version ' + res.version : '';
+    $('version').textContent = res.version ? t('ui.version', { v: res.version }) : '';
     renderTop(res);
     renderVehicle(res);
     renderAlarm(res);
@@ -173,46 +236,46 @@
 
   function renderTop(res) {
     const chip = $('mode-chip');
-    chip.textContent = res.config_dry_run ? 'Dry-Run: es wird nichts geschrieben' : 'Scharf';
+    chip.textContent = t(res.config_dry_run ? 'ui.mode.dry' : 'ui.mode.live');
     chip.className = 'chip ' + (res.config_dry_run ? 'dry' : 'live');
-    $('stamp').textContent = res.time ? 'Stand ' + S.fmt.time.format(d(res.time)) + ' Uhr' + (res.stale_since ? ' (ältere Daten)' : '') : 'Noch kein Lauf';
+    $('stamp').textContent = res.time ? t(res.stale_since ? 'ui.stamp_stale' : 'ui.stamp', { time: S.fmt.time.format(d(res.time)) }) : t('ui.stamp.none');
   }
 
   function renderVehicle(res) {
     const v = res.vehicle || {};
-    $('v-title').textContent = v.title || 'Fahrzeug';
+    $('v-title').textContent = v.title || t('ui.vehicle.title');
     const soc = typeof v.soc === 'number' ? v.soc : null;
     $('v-soc').textContent = soc == null ? '–' : String(Math.round(soc));
     $('v-fill').style.setProperty('--w', (soc || 0) + '%');
-    $('v-bar').setAttribute('aria-label', soc == null ? 'Ladestand unbekannt' : 'Ladestand ' + Math.round(soc) + ' Prozent');
+    $('v-bar').setAttribute('aria-label', soc == null ? t('ui.soc.unknown') : t('ui.soc.aria', { n: Math.round(soc) }));
     const dz = res.desired;
     $('v-flag').hidden = !dz;
-    if (dz) { $('v-flag').style.setProperty('--x', dz.soc + '%'); $('v-flag-label').textContent = dz.soc + ' %'; }
+    if (dz) { $('v-flag').style.setProperty('--x', dz.soc + '%'); $('v-flag-label').textContent = t('ui.pct', { n: dz.soc }); }
 
     const facts = $('v-facts');
     facts.replaceChildren();
     const chip = (ic, txt) => facts.append(el('li', 'chip', ic ? icon(ic) : null, txt));
-    if (v.connected != null) chip('plug', v.connected ? 'Angesteckt' : 'Nicht angesteckt');
-    if (v.car_limit != null) chip(null, 'Limit im Auto ' + v.car_limit + ' %');
-    if (v.min_soc != null) chip(null, 'Minimum ' + v.min_soc + ' %');
-    if (v.mode) chip(null, 'evcc: ' + v.mode);
+    if (v.connected != null) chip('plug', t(v.connected ? 'ui.fact.connected' : 'ui.fact.disconnected'));
+    if (v.car_limit != null) chip(null, t('ui.fact.car_limit', { n: v.car_limit }));
+    if (v.min_soc != null) chip(null, t('ui.fact.min_soc', { n: v.min_soc }));
+    if (v.mode) chip(null, t('ui.fact.evcc_mode', { mode: v.mode }));
 
     const box = $('plan-box');
     box.replaceChildren();
     if (dz) {
-      box.append(el('p', 'plan-main', dz.soc + ' % bis ' + S.fmt.short.format(d(dz.time)) + ' Uhr'));
-      box.append(el('p', 'plan-sub', 'für „' + dz.title + '“'));
+      box.append(el('p', 'plan-main', t('ui.plan.main', { soc: dz.soc, time: S.fmt.short.format(d(dz.time)) })));
+      box.append(el('p', 'plan-sub', t('ui.plan.for', { title: dz.title })));
       const a = res.action || {};
       const lines = {
-        set: res.dry_run ? 'Würde in evcc gesetzt (Dry-Run).' : (a.done ? 'In evcc gesetzt.' : 'Wird in evcc gesetzt.'),
-        none: 'Entspricht dem Plan in evcc.',
-        manual: 'In evcc steht ein manueller Plan. Der bleibt unberührt.',
-        delete: res.dry_run ? 'Würde den alten Plan entfernen (Dry-Run).' : 'Alter Plan entfernt.',
+        set: t(res.dry_run ? 'ui.plan.set_dry' : (a.done ? 'ui.plan.set_done' : 'ui.plan.set_pending')),
+        none: t('ui.plan.none_change'),
+        manual: t('ui.plan.manual'),
+        delete: t(res.dry_run ? 'ui.plan.delete_dry' : 'ui.plan.delete_done'),
       };
       box.append(el('p', 'plan-meta', lines[a.kind] || ''));
-      if (dz.capped_from) box.append(el('p', 'plan-meta', 'Gedeckelt von ' + dz.capped_from + ' %, weil die Einstufung unklar ist.'));
+      if (dz.capped_from) box.append(el('p', 'plan-meta', t('ui.plan.capped', { n: dz.capped_from })));
     } else {
-      box.append(el('p', 'plan-main', 'Kein Ladeplan nötig'));
+      box.append(el('p', 'plan-main', t('ui.plan.none')));
       if (res.skipped_reason) box.append(el('p', 'plan-meta', res.skipped_reason));
     }
   }
@@ -224,14 +287,14 @@
     if (!probs.length) return;
     const ul = el('ul');
     probs.forEach((p) => ul.append(el('li', null, p)));
-    box.replaceChildren(el('strong', null, 'Achtung'), ul);
-    if (res.stale_since) box.append(el('p', null, 'Angezeigte Daten stammen von ' + S.fmt.short.format(d(res.stale_since)) + ' Uhr.'));
+    box.replaceChildren(el('strong', null, t('ui.alarm.title')), ul);
+    if (res.stale_since) box.append(el('p', null, t('ui.alarm.stale', { time: S.fmt.short.format(d(res.stale_since)) })));
   }
 
   function renderNotices(res) {
     const list = res.notices || [];
     $('notices').hidden = !list.length;
-    $('notices-title').textContent = 'Hinweise (' + list.length + ')';
+    $('notices-title').textContent = t('ui.notices.title', { n: list.length });
     const ul = $('notices-list');
     ul.replaceChildren();
     list.forEach((n) => ul.append(el('li', null, n.text + ' ', el('small', null, '(' + n.status + ')'))));
@@ -262,7 +325,7 @@
         if (day !== curDay) {
           curDay = day;
           const sec = el('section', 'day');
-          const rel = day === today ? 'Heute' : day === tomorrow ? 'Morgen' : '';
+          const rel = day === today ? t('ui.day.today') : day === tomorrow ? t('ui.day.tomorrow') : '';
           sec.append(el('div', 'day-head', el('h2', null, S.fmt.dayLong.format(d(it.start))), rel ? el('span', null, rel) : null));
           rail = el('div', 'rail');
           sec.append(rail);
@@ -274,7 +337,7 @@
     }
     const empty = $('empty');
     empty.hidden = items.length > 0;
-    if (!items.length) empty.textContent = res.error ? 'Der Kalender konnte nicht gelesen werden.' : 'Im Kalender steht in den nächsten Tagen kein Termin mit Uhrzeit.';
+    if (!items.length) empty.textContent = t(res.error ? 'ui.empty.calendar_error' : 'ui.empty.none');
     if (fresh) setTimeout(() => S.cards.forEach((c) => c.root.classList.remove('fresh')), 1200);
   }
 
@@ -297,9 +360,9 @@
     // Bedienung
     r.mode = el('div', 'seg-ctl');
     r.mode.setAttribute('role', 'radiogroup');
-    r.mode.setAttribute('aria-label', 'Auto für diesen Termin');
+    r.mode.setAttribute('aria-label', t('ui.card.mode_aria'));
     r.modeBtns = {};
-    [['', 'Automatisch', null], ['car', 'Auto', 'car'], ['none', 'Kein Auto', 'ban']].forEach(([val, txt, ic]) => {
+    [['', t('ui.card.mode_auto'), null], ['car', t('ui.card.mode_car'), 'car'], ['none', t('ui.card.mode_none'), 'ban']].forEach(([val, txt, ic]) => {
       const b = el('button', null, ic ? icon(ic) : null, txt);
       b.type = 'button';
       b.setAttribute('role', 'radio');
@@ -318,9 +381,9 @@
       const m = cur(key).mode;
       change(key, { mode: t != null && !m ? 'car' : m, target: t });
     });
-    const lab = el('label', 'ctl', 'Ladeziel', r.sel);
+    const lab = el('label', 'ctl', t('ui.card.target'), r.sel);
     lab.htmlFor = r.sel.id;
-    r.reset = el('button', 'link', 'Zurücksetzen');
+    r.reset = el('button', 'link', t('ui.card.reset'));
     r.reset.type = 'button';
     r.reset.addEventListener('click', () => change(key, { mode: null, target: null }));
     r.controls = el('div', 'controls', r.mode, lab, r.reset);
@@ -338,20 +401,21 @@
   }
 
   function updateCard(c, it) {
-    const st = STATUS[it.status] || [it.status, '', 'info', ''];
+    const st = STATUS[it.status] || [null, '', 'info', ''];
+    const stLabel = st[0] ? t(st[0]) : it.status;
     const o = cur(it.key);
     c.root.className = 'card ' + st[3] + (c.root.classList.contains('fresh') ? ' fresh' : '');
     c.when.textContent = S.fmt.time.format(d(it.start)) + '–' + S.fmt.time.format(d(it.end));
-    c.title.textContent = it.title || '(ohne Titel)';
+    c.title.textContent = it.title || t('ui.card.untitled');
     c.badge.className = 'badge ' + st[1];
-    c.badge.replaceChildren(icon(st[2]), st[0] + (it.unclear ? ' (unklar)' : ''));
+    c.badge.replaceChildren(icon(st[2]), it.unclear ? t('ui.card.unclear', { label: stLabel }) : stLabel);
 
     // Meta row
     c.meta.replaceChildren();
     const where = it.place || it.location;
     if (where) { const s = el('span', null, icon('pin'), where); s.title = it.location || ''; c.meta.append(s); }
-    if (it.km != null) c.meta.append(el('span', null, icon('route'), num(it.km) + ' km einfach, ' + it.drive_min + ' min' + (it.estimated ? ' (Luftlinie)' : '')));
-    if (it.kwh100 != null) c.meta.append(el('span', null, icon('temp'), (it.temp_c == null ? 'Temperatur unbekannt' : num(it.temp_c) + ' °C') + ', ' + num(it.kwh100) + ' kWh/100 km'));
+    if (it.km != null) c.meta.append(el('span', null, icon('route'), t(it.estimated ? 'ui.card.km_est' : 'ui.card.km', { km: num(it.km), min: it.drive_min })));
+    if (it.kwh100 != null) c.meta.append(el('span', null, icon('temp'), it.temp_c == null ? t('ui.card.temp_unknown_kwh', { kwh: num(it.kwh100) }) : t('ui.card.temp_kwh', { temp: num(it.temp_c), kwh: num(it.kwh100) })));
     c.meta.hidden = !c.meta.children.length;
 
     // Charge bar
@@ -364,7 +428,7 @@
       const seg = (cls, w) => { const s = el('span', 'seg ' + cls); s.style.setProperty('--w', w + '%'); c.bar.append(s); };
       if (it.manual || it.need_soc == null) {
         seg('manual', T);
-        c.legend.append(el('span', null, 'Ziel von Hand gewählt, Strecke unbekannt'));
+        c.legend.append(el('span', null, t('ui.card.manual_target')));
       } else {
         let need = it.need_soc;
         const free = T - need;
@@ -374,27 +438,27 @@
         seg('back', need / 2);
         seg('out', need / 2);
         const li = (cls, label, v) => { const s = el('span', cls, el('i'), label + ' '); s.append(el('b', null, num(v) + ' %')); c.legend.append(s); };
-        li('l-out', 'Hinfahrt', it.need_soc / 2);
-        li('l-back', 'Rückfahrt', it.need_soc / 2);
-        li('l-reserve', 'Reserve', Math.max(0, free));
+        li('l-out', t('ui.card.leg_out'), it.need_soc / 2);
+        li('l-back', t('ui.card.leg_back'), it.need_soc / 2);
+        li('l-reserve', t('ui.card.leg_reserve'), Math.max(0, free));
       }
       c.flag.style.setProperty('--x', T + '%');
-      c.flagLabel.textContent = T + ' %';
+      c.flagLabel.textContent = t('ui.pct', { n: T });
       c.bar.append(c.flag);
-      c.bar.setAttribute('aria-label', 'Ladeziel ' + T + ' Prozent');
+      c.bar.setAttribute('aria-label', t('ui.card.target_aria', { n: T }));
       c.ready.replaceChildren();
-      if (it.ready_by) c.ready.append(icon('clock'), 'Geladen bis ' + S.fmt.short.format(d(it.ready_by)) + ' Uhr');
+      if (it.ready_by) c.ready.append(icon('clock'), t('ui.card.ready_by', { time: S.fmt.short.format(d(it.ready_by)) }));
     }
 
     c.detail.className = 'detail' + (short || it.status === 'ziel_fehlt' ? ' alert' : '');
-    c.detail.textContent = short ? 'Dieses Ziel reicht nicht für Hin- und Rückfahrt.' : (it.detail || '');
+    c.detail.textContent = short ? t('ui.card.too_low') : (it.detail || '');
     c.detail.hidden = !c.detail.textContent;
 
     // Bedienung
     const modeKey = o.mode || '';
     for (const [k, b] of Object.entries(c.modeBtns)) b.setAttribute('aria-checked', String(k === modeKey));
     const auto = it.target_alone;
-    c.optAuto.textContent = auto != null ? 'Automatisch (' + auto + ' %)' : (it.has_location ? 'Automatisch' : 'Ziel wählen');
+    c.optAuto.textContent = auto != null ? t('ui.card.auto_pct', { n: auto }) : t(it.has_location ? 'ui.card.auto' : 'ui.card.pick');
     if (document.activeElement !== c.sel) c.sel.value = o.target == null ? '' : String(o.target);
     c.reset.hidden = !(o.mode || o.target != null);
   }
@@ -406,7 +470,7 @@
     if (c && it) updateCard(c, it);
     $('progress').hidden = false;
     const r = await api('POST', '/api/override', { key, mode: v.mode, target: v.target });
-    if (!r.ok) { delete S.pending[key]; toast(r.data.error || 'Das konnte nicht gespeichert werden.', true); }
+    if (!r.ok) { delete S.pending[key]; toast(r.data.error || t('ui.err.override_save'), true); }
     refresh();
   }
 
@@ -425,19 +489,19 @@
 
   // ------------------------------------------------------------ History
   function runText(r) {
-    if (!r.ok) return ['bad', 'Fehler: ' + (r.error || 'unbekannt')];
-    const plan = r.soc != null ? r.soc + ' % bis ' + S.fmt.short.format(d(r.plan_time)) + ' Uhr für „' + r.title + '“' : null;
+    if (!r.ok) return ['bad', t('ui.hist.error', { error: r.error || t('ui.hist.unknown') })];
+    const plan = r.soc != null ? t('ui.hist.plan', { soc: r.soc, time: S.fmt.short.format(d(r.plan_time)), title: r.title }) : null;
     const a = r.action;
-    if (a === 'set') return [r.done ? 'ok' : '', r.done ? 'Plan gesetzt: ' + plan : (r.dry_run ? 'Würde setzen: ' : 'Setzen fehlgeschlagen: ') + plan];
-    if (a === 'delete') return [r.done ? 'ok' : '', r.done ? 'Plan entfernt' : 'Würde Plan entfernen'];
-    if (a === 'manual') return ['warn', 'Manueller Plan in evcc, nicht geändert'];
-    return ['', plan ? 'Keine Änderung (' + plan + ')' : 'Kein Ladeplan nötig'];
+    if (a === 'set') return [r.done ? 'ok' : '', t(r.done ? 'ui.hist.set_done' : (r.dry_run ? 'ui.hist.set_dry' : 'ui.hist.set_failed'), { plan })];
+    if (a === 'delete') return [r.done ? 'ok' : '', t(r.done ? 'ui.hist.delete_done' : 'ui.hist.delete_dry')];
+    if (a === 'manual') return ['warn', t('ui.hist.manual')];
+    return ['', plan ? t('ui.hist.no_change', { plan }) : t('ui.plan.none')];
   }
 
   async function loadHistory() {
     const r = await api('GET', '/api/history');
     if (r.status === 401) return boot();
-    if (!r.ok) return toast(r.data.error || 'Der Verlauf konnte nicht geladen werden.', true);
+    if (!r.ok) return toast(r.data.error || t('ui.err.history_load'), true);
     if (!S.fmt) S.fmt = makeFormatters(S.tz);
     const runs = r.data.runs || [];
     $('runs-empty').hidden = runs.length > 0;
@@ -447,30 +511,41 @@
       const [cls, txt] = runText(run);
       const li = el('li', 'run ' + cls);
       li.append(el('span', 'run-time', S.fmt.short.format(d(run.time))),
-        el('span', 'chip ' + (run.dry_run ? 'dry' : 'live'), run.dry_run ? 'Dry-Run' : 'Scharf'),
+        el('span', 'chip ' + (run.dry_run ? 'dry' : 'live'), t(run.dry_run ? 'ui.hist.dry' : 'ui.hist.live')),
         el('span', 'run-text', txt));
-      if (run.problems) li.append(el('span', 'run-note', run.problems + ' Problem' + (run.problems > 1 ? 'e' : '')));
+      if (run.problems) li.append(el('span', 'run-note', t(run.problems > 1 ? 'ui.hist.problems_many' : 'ui.hist.problems_one', { n: run.problems })));
       ul.append(li);
     });
   }
 
   // ------------------------------------------------------------ Settings
   const GROUPS = [
-    ['Verbrauch', [['warm', 'Verbrauch warm', 'kWh/100 km'], ['cold', 'Verbrauch kalt', 'kWh/100 km'], ['temp_threshold_c', 'Ab dieser Temperatur gilt „warm“', '°C']]],
-    ['Ladung', [['reserve_soc', 'Reserve bei Rückkehr', '%'], ['unclear_cap_soc', 'Deckel bei unklarer Einstufung', '%'],
-      ['charge_power_kw', 'Ladeleistung zu Hause', 'kW'], ['charge_loss_margin', 'Verlustreserve beim Nachladen (0 bis 1)', ''],
-      ['vehicle_limit_min', 'Warnen, wenn das Limit im Auto darunter liegt', '%']]],
-    ['Fahrten', [['min_car_km', 'Einfache Strecke darunter: zu Fuß oder Rad', 'km'], ['manual_drive_min', 'Fahrzeit ohne Adresse', 'min'],
-      ['time_buffer_min', 'Puffer vor der Abfahrt', 'min'], ['chain_window_h', 'Zeitfenster für Folgetermine', 'h']]],
+    ['consumption', [['warm', 'kwh100'], ['cold', 'kwh100'], ['temp_threshold_c', 'c']]],
+    ['charging', [['reserve_soc', 'pct'], ['unclear_cap_soc', 'pct'], ['charge_power_kw', 'kw'], ['charge_loss_margin', ''], ['vehicle_limit_min', 'pct']]],
+    ['trips', [['min_car_km', 'km'], ['manual_drive_min', 'min'], ['time_buffer_min', 'min'], ['chain_window_h', 'h']]],
   ];
+
+  // Language name in its own language (fallback: the code).
+  function langName(code) {
+    try { return new Intl.DisplayNames([code], { type: 'language' }).of(code) || code; } catch (e) { return code; }
+  }
 
   function buildSettings(data) {
     const box = $('settings-groups');
     box.replaceChildren();
     S.inputs = {};
-    GROUPS.forEach(([title, fields]) => {
-      const fs = el('fieldset', 'group', el('legend', null, title));
-      fields.forEach(([key, label, unit]) => {
+    const langs = Array.isArray(data.languages) && data.languages.length ? data.languages : S.languages;
+    const gen = el('fieldset', 'group', el('legend', null, t('ui.set.group.general')));
+    const lsel = el('select', 'sel');
+    lsel.id = 'set-language';
+    langs.forEach((code) => { const o = el('option', null, langName(code)); o.value = code; lsel.append(o); });
+    S.langSel = lsel;
+    gen.append(el('label', 'field row', el('span', null, t('ui.set.language')), el('span', 'inp', lsel)));
+    box.append(gen);
+    GROUPS.forEach(([group, fields]) => {
+      const fs = el('fieldset', 'group', el('legend', null, t('ui.set.group.' + group)));
+      fields.forEach(([key, unitKey]) => {
+        const label = t('ui.set.' + key), unit = unitKey ? t('ui.unit.' + unitKey) : '';
         const lim = data.limits[key];
         const inp = el('input');
         inp.type = 'number';
@@ -488,6 +563,7 @@
 
   function fillSettings(data) {
     S.settings = data;
+    if (S.langSel) S.langSel.value = data.values.language || S.lang;
     for (const [key, inp] of Object.entries(S.inputs)) {
       inp.value = String(data.values[key]);
       inp.parentElement.parentElement.classList.toggle('changed', data.changed.includes(key));
@@ -500,13 +576,13 @@
 
   function addRuleRow(match, mode) {
     const m = el('input');
-    m.type = 'text'; m.maxLength = 40; m.value = match || ''; m.placeholder = 'Suchwort, z. B. firma*';
-    m.setAttribute('aria-label', 'Suchwort');
+    m.type = 'text'; m.maxLength = 40; m.value = match || ''; m.placeholder = t('ui.rules.placeholder');
+    m.setAttribute('aria-label', t('ui.rules.keyword'));
     const sel = el('select');
-    [['auto', 'Auto'], ['bahn', 'Bahn']].forEach(([v, t]) => { const o = el('option', null, t); o.value = v; sel.append(o); });
+    [['auto', t('ui.rules.auto')], ['bahn', t('ui.rules.bahn')]].forEach(([v, t]) => { const o = el('option', null, t); o.value = v; sel.append(o); });
     sel.value = mode || 'auto';
-    sel.setAttribute('aria-label', 'Einstufung');
-    const rm = el('button', 'link', 'Entfernen');
+    sel.setAttribute('aria-label', t('ui.rules.class'));
+    const rm = el('button', 'link', t('ui.rules.remove'));
     rm.type = 'button';
     const li = el('li', 'rule', m, sel, rm);
     rm.addEventListener('click', () => li.remove());
@@ -522,7 +598,7 @@
   async function loadSettings() {
     const r = await api('GET', '/api/settings');
     if (r.status === 401) return boot();
-    if (!r.ok) return toast(r.data.error || 'Die Einstellungen konnten nicht geladen werden.', true);
+    if (!r.ok) return toast(r.data.error || t('ui.err.settings_load'), true);
     if (!S.inputs) buildSettings(r.data);
     fillSettings(r.data);
   }
@@ -535,25 +611,39 @@
       if (inp.value === '' || Number.isNaN(v)) continue;
       if (v !== cur[key]) values[key] = v;
     }
+    if (S.langSel && S.langSel.value && S.langSel.value !== cur.language) values.language = S.langSel.value;
     const rules = readRules();
     if (JSON.stringify(rules) !== JSON.stringify(cur.rules)) values.rules = rules;
     const err = $('settings-error');
     err.hidden = true;
-    if (!Object.keys(values).length) return toast('Nichts geändert.');
+    if (!Object.keys(values).length) return toast(t('ui.set.nothing'));
     $('settings-save').disabled = true;
     const r = await api('POST', '/api/settings', { values });
     $('settings-save').disabled = false;
-    if (!r.ok) { err.textContent = r.data.error || 'Das hat nicht geklappt.'; err.hidden = false; return; }
-    fillSettings(r.data);
-    toast('Gespeichert. Ein neuer Lauf startet.');
+    if (!r.ok) { err.textContent = r.data.error || t('ui.err.generic'); err.hidden = false; return; }
+    await afterSettings(r.data);
+    toast(t('ui.set.saved'));
     refresh();
+  }
+
+  // Takes over saved settings; switches the UI language if it changed.
+  async function afterSettings(data) {
+    S.settings = data;
+    const lang = data.values && data.values.language;
+    if (lang && lang !== S.lang) {
+      if (Array.isArray(data.languages)) S.languages = data.languages;
+      await setLang(lang);   // rebuilds the settings form (S.inputs = null) when the settings tab is visible
+      if (S.inputs) return;
+      buildSettings(data);
+    }
+    fillSettings(data);
   }
 
   async function resetSettings() {
     const r = await api('POST', '/api/settings', { reset: true });
-    if (!r.ok) return toast(r.data.error || 'Das hat nicht geklappt.', true);
-    fillSettings(r.data);
-    toast('Zurückgesetzt auf die config.yaml.');
+    if (!r.ok) return toast(r.data.error || t('ui.err.generic'), true);
+    await afterSettings(r.data);
+    toast(t('ui.set.reset_done'));
     refresh();
   }
 
@@ -568,7 +658,7 @@
     $('btn-run').disabled = true;
     $('progress').hidden = false;
     const r = await api('POST', '/api/run', {});
-    if (!r.ok) toast(r.data.error || 'Der Lauf konnte nicht gestartet werden.', true);
+    if (!r.ok) toast(r.data.error || t('ui.err.run_start'), true);
     refresh();
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('view-main').hidden) refresh(); });

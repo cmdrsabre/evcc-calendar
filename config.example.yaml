@@ -56,3 +56,4 @@ web: {host: 0.0.0.0, port: 80}      # port inside the container; for the publish
 db_path: /data/state.db
 # personal_dir: /data/personal          # own images, default: folder "personal" next to the database
 timezone: Europe/Berlin
+language: en                          # UI and message language: en or de (more: see README)

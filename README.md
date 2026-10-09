@@ -4,7 +4,7 @@ Sets a one-time [evcc](https://evcc.io) charging plan (target SoC and time) for 
 Every 30 minutes it reads the appointments of the next 6 days, classifies car trips, determines the route via OpenRouteService,
 calculates the energy needed for the outbound and return trip and sets the plan in evcc. It starts in **dry-run** mode: nothing is written and nothing is sent.
 
-> Note: the web UI, log messages and keyword rules (e.g. "Bahn" = train) are currently in German. Code, docs and comments are in English.
+> The web UI and messages are available in English (default) and German. Set `language: de` in `config.yaml` or change it in the UI under Settings.
 
 ## Getting started (Mac test and Unraid)
 Port inside the container: 80. Published port defaults to **8180** (`HOST_PORT` in `.env`).
@@ -80,6 +80,11 @@ Rules: the login page always shows the default image. Your own image is only ser
 If your own image is missing, the default stays. The `personal/` folder (and `data/`) is in `.gitignore`, so the image never ends up in the repository.
 Recommended: a cut-out car (transparent background) in side view, about 1200 pixels wide, under 8 MB. The UI does not crop or convert anything.
 Later (not before 0.3): set an image per vehicle reported by evcc in the UI, with automatic cropping and format conversion.
+
+## Languages
+The language (`en` default, `de`) applies to the UI, push messages and API errors. Log output is always English. The keywords "Auto"/"Car" and "Bahn"/"Train" in an
+appointment are recognised in both languages whatever the setting is. To add a language, copy `evccplan/static/locales/en.json` to `<code>.json`, translate the
+values (keep the keys and the `{placeholders}`) and select it in the UI; `tests/test_i18n.py` checks that all languages have the same keys and placeholders.
 
 ## Versions and roadmap
 The version is in `evccplan/__init__.py`, changes are in `CHANGELOG.md`. Before 1.0 the middle number rises with new features,
