@@ -88,7 +88,7 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 | 0.4 | Google OAuth login, Home Assistant optional (calendar directly via Google, other notification channels) | planned |
 
 ## License
-[MIT](LICENSE.md). Third-party components are listed there as well.
+[MIT](LICENSE). Third-party components and notices: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ## Unraid
 A template for the Unraid Docker UI is in `templates/evcc-calendar.xml`. Until it is listed in Community Applications, copy it to
