@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+- Docker image published to ghcr.io (`ghcr.io/cmdrsabre/evcc-calendar`), built on version tags (`v*.*.*`).
+- `docker-compose.yml` uses the published image; `--build` still builds locally.
+- English documentation and comments, MIT license.
+
 ## 0.2.0
 - Login with a fixed user `admin`; the password is set on first access.
 - Per-appointment overrides in the UI: automatic / car / no car and charge target (5 to 100 %), also for appointments without an address.
