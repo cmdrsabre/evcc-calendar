@@ -219,10 +219,13 @@ class Runner:
                 act["done"] = True
                 log.info("Aktion %s ausgeführt (%s)", action.kind, action.reason)
                 if action.kind == "set":
-                    notices.append(Notice("set:%d:%s" % (ev.desired.soc, _iso(ev.desired.time)),
-                                          "Ladeplan gesetzt: %d %% bis %s für '%s'." % (
-                                              ev.desired.soc, planner._fmt(ev.desired.time, cfg.timezone),
-                                              ev.desired.item.event.title), level="info"))
+                    text = "Ladeplan gesetzt: %d %% bis %s für '%s'." % (
+                        ev.desired.soc, planner._fmt(ev.desired.time, cfg.timezone), ev.desired.item.event.title)
+                    soc_now = lp.get("vehicleSoc")
+                    if isinstance(soc_now, (int, float)) and soc_now >= ev.desired.soc:
+                        text += (" Nach dem aktuellen Ladestand (%d %%) ist kein weiteres Laden nötig. "
+                                 "Der Plan greift, falls der Ladestand darunter sinkt." % round(soc_now))
+                    notices.append(Notice("set:%d:%s" % (ev.desired.soc, _iso(ev.desired.time)), text, level="info"))
                 else:
                     notices.append(Notice("del:%s" % (last_set or {}).get("time"),
                                           "Ladeplan entfernt: Der zugehörige Termin existiert nicht mehr.", level="info"))
