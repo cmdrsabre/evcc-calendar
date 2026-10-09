@@ -404,3 +404,18 @@ def test_warning_when_plan_not_effective_and_battery_below_target(env):
     runner = env[2]
     assert len(_not_effective(runner, 40)) == 1
     assert len(_not_effective(runner, None)) == 1       # unknown SoC: keep the warning
+
+
+def test_set_confirmation_mentions_no_charging_needed_when_battery_is_above_target(env):
+    srv, cfg, runner, state, ors, store = env
+    runner.run()                                                     # fixture battery 67.1 %, plan 45 %
+    msg = [m for m in srv.notified if m.startswith("Ladeplan gesetzt")][0]
+    assert "kein weiteres Laden nötig" in msg and "(67 %)" in msg
+
+
+def test_set_confirmation_without_hint_when_battery_is_below_target(env):
+    srv, cfg, runner, state, ors, store = env
+    srv.state["loadpoints"][0]["vehicleSoc"] = 30
+    runner.run()
+    msg = [m for m in srv.notified if m.startswith("Ladeplan gesetzt")][0]
+    assert "kein weiteres Laden" not in msg
