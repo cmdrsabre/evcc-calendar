@@ -5,6 +5,7 @@
 - New tab "Verlauf": the last 300 runs (including "Jetzt prüfen") with the result of each run.
 - New API endpoints `GET/POST /api/settings` and `GET /api/history` (login required).
 - Saving settings triggers a run in the configured mode.
+
 ## 0.2.4
 - Fix: no more warning "plan is not effective in evcc" when the battery is already at or above the plan target. evcc does not report such a plan as effective until the battery drops below the target, which is expected.
 - The "Ladeplan gesetzt" push now adds "Nach dem aktuellen Ladestand (xx %) ist kein weiteres Laden nötig. Der Plan greift, falls der Ladestand darunter sinkt." when the battery is already at or above the target.
