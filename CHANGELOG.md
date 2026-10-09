@@ -2,6 +2,7 @@
 
 ## 0.2.4
 - Fix: no more warning "plan is not effective in evcc" when the battery is already at or above the plan target. evcc does not report such a plan as effective until the battery drops below the target, which is expected.
+- The "Ladeplan gesetzt" push now adds "Nach dem aktuellen Ladestand (xx %) ist kein weiteres Laden nötig. Der Plan greift, falls der Ladestand darunter sinkt." when the battery is already at or above the target.
 
 ## 0.2.3
 - Docker image carries OCI labels (source repository, description, license), so the GitHub package is linked to the repo.
