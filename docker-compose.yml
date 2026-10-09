@@ -1,6 +1,7 @@
 services:
   evcc-kalender:
-    build: .
+    image: ghcr.io/cmdrsabre/evcc-calendar:latest
+    build: .                               # only used with --build (local development)
     container_name: evcc-kalender
     restart: unless-stopped
     env_file: .env                         # HA_TOKEN, EVCC_API_KEY, ORS_KEY

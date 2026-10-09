@@ -14,7 +14,7 @@ Port inside the container: 80. Published port defaults to **8180** (`HOST_PORT` 
    - Unraid: `/mnt/user/appdata/evcc-kalender/config.yaml`
    Then review `config.yaml` (home address, vehicle name, `ha.notify_targets`).
 2. `cp .env.example .env` and fill in HA_TOKEN, EVCC_API_KEY, ORS_KEY. On Unraid enable the commented values (`DATA_DIR`, `PUID=99`, `PGID=100`). Never share `.env`.
-3. `docker compose up -d --build`
+3. `docker compose up -d` pulls the published image `ghcr.io/cmdrsabre/evcc-calendar:latest`. To build it locally instead: `docker compose up -d --build`.
 4. Status page: `http://localhost:8180` (Mac) or `http://<unraid-ip>:8180`. "Jetzt prüfen (Dry-Run)" shows the calculated plan without writing anything.
 5. Logs: `docker compose logs -f`. Stop: `docker compose down`.
 6. Once the dry run looks right over a few days, set `dry_run: false` in `config.yaml` and restart with `docker compose restart`.
