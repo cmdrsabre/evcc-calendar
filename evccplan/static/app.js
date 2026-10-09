@@ -1,4 +1,4 @@
-/* Ladeplanung: Oberfläche ohne Build-Schritt. Alle Texte aus Daten werden per textContent gesetzt (kein innerHTML mit Fremddaten). */
+/* Charge planning: UI without a build step. All texts from data are set via textContent (no innerHTML with foreign data). */
 (() => {
   'use strict';
 
@@ -8,7 +8,7 @@
 
   const S = { status: null, pending: {}, cards: new Map(), sig: '', tz: 'Europe/Berlin', timer: null, fmt: null, targets: [] };
 
-  // ------------------------------------------------------------ Hilfen
+  // ------------------------------------------------------------ Helpers
   function icon(name) {
     const svg = document.createElementNS(SVGNS, 'svg');
     svg.setAttribute('class', 'ico');
@@ -38,7 +38,7 @@
     let r;
     try { r = await fetch(path, opt); } catch (e) { return { ok: false, status: 0, data: { error: 'Der Dienst ist nicht erreichbar.' } }; }
     let data = null;
-    try { data = await r.json(); } catch (e) { /* leer */ }
+    try { data = await r.json(); } catch (e) { /* empty */ }
     return { ok: r.ok, status: r.status, data: data || {} };
   }
 
@@ -52,7 +52,7 @@
     toastTimer = setTimeout(() => { t.hidden = true; }, isError ? 6000 : 2500);
   }
 
-  // Zeigt zuerst die eingebaute Grafik, dann das erste ladbare Bild aus der Liste (z. B. eigenes Bild vor Standardbild).
+  // Shows the built-in graphic first, then the first loadable image from the list (e.g. custom image before default image).
   function art(box, ...srcs) {
     box.innerHTML = CAR_SVG;
     const next = (i) => {
@@ -77,7 +77,7 @@
   }
   const d = (iso) => new Date(iso);
 
-  // ------------------------------------------------------------ Anmeldung
+  // ------------------------------------------------------------ Login
   function showAuth(setupNeeded, minPw) {
     clearTimeout(S.timer);
     $('view-main').hidden = true;
@@ -117,11 +117,11 @@
     showAuth(!!r.data.setup_needed, r.data.min_password);
   }
 
-  // ------------------------------------------------------------ Hauptansicht
+  // ------------------------------------------------------------ Main view
   function startMain() {
     $('view-auth').hidden = true;
     $('view-main').hidden = false;
-    art($('car-art'), 'api/personal/car', 'img/car.webp');   // eigenes Bild (nur eingeloggt) vor dem Standardbild
+    art($('car-art'), 'api/personal/car', 'img/car.webp');   // custom image (logged in only) before the default image
     refresh();
   }
 
@@ -236,7 +236,7 @@
     list.forEach((n) => ul.append(el('li', null, n.text + ' ', el('small', null, '(' + n.status + ')'))));
   }
 
-  // ------------------------------------------------------------ Termine
+  // ------------------------------------------------------------ Events
   function renderItems(res) {
     const items = res.items || [];
     const fresh = S.cards.size === 0;
@@ -345,7 +345,7 @@
     c.badge.className = 'badge ' + st[1];
     c.badge.replaceChildren(icon(st[2]), st[0] + (it.unclear ? ' (unklar)' : ''));
 
-    // Meta-Zeile
+    // Meta row
     c.meta.replaceChildren();
     const where = it.place || it.location;
     if (where) { const s = el('span', null, icon('pin'), where); s.title = it.location || ''; c.meta.append(s); }
@@ -353,7 +353,7 @@
     if (it.kwh100 != null) c.meta.append(el('span', null, icon('temp'), (it.temp_c == null ? 'Temperatur unbekannt' : num(it.temp_c) + ' °C') + ', ' + num(it.kwh100) + ' kWh/100 km'));
     c.meta.hidden = !c.meta.children.length;
 
-    // Ladebalken
+    // Charge bar
     const T = it.target_chain != null ? it.target_chain : it.target_alone;
     c.charge.hidden = T == null;
     let short = false;
@@ -409,7 +409,7 @@
     refresh();
   }
 
-  // ------------------------------------------------------------ Kopfzeilen-Knöpfe
+  // ------------------------------------------------------------ Header buttons
   $('auth-form').addEventListener('submit', submitAuth);
   $('btn-logout').addEventListener('click', async () => { await api('POST', '/api/logout', {}); S.cards.clear(); S.sig = ''; $('days').replaceChildren(); boot(); });
   $('btn-run').addEventListener('click', async () => {

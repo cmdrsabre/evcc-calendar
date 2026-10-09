@@ -1,4 +1,4 @@
-"""Vorfilter: zieht aus Freitext-Ortsangaben eine geocodierbare Adresse."""
+"""Pre-filter: extracts a geocodable address from free-text location strings."""
 from __future__ import annotations
 
 import re
@@ -17,7 +17,7 @@ def _normalize(text: str) -> str:
 
 
 def _street_from(prefix: str) -> str:
-    """Letztes Segment vor der Hausnummer; Strassenname ab dem ersten Strassenwort."""
+    """Last segment before the house number; street name starts at the first street word."""
     segment = re.split(r",| - | – ", prefix)[-1].strip()
     tokens = segment.split()
     if not tokens:
@@ -30,7 +30,7 @@ def _street_from(prefix: str) -> str:
 
 
 def candidates(location: str) -> list:
-    """Geocoding-Anfragen, beste zuerst. Leere Liste, wenn kein Ort vorhanden."""
+    """Geocoding queries, best first. Empty list if there is no location."""
     raw = _normalize(location)
     if not raw:
         return []

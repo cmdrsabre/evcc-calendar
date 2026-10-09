@@ -1,8 +1,8 @@
-"""Reine Planungslogik ohne Netzwerk.
+"""Pure planning logic, no network.
 
-evaluate(): Termine -> gewuenschter Plan (Ziel-SoC + Zeit) und Hinweise.
-context_notices(): Hinweise, die den evcc-Zustand brauchen.
-reconcile(): gewuenschter Plan gegen den vorhandenen Plan in evcc.
+evaluate(): events -> desired plan (target SoC + time) and notices.
+context_notices(): notices that need the evcc state.
+reconcile(): desired plan versus the existing plan in evcc.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from . import calc
 from .classify import classify
 from .models import Desired, Evaluation, Item, Mode, Notice, Override, Route, override_key
 
-Resolver = Callable[[object], tuple]          # Event -> (Route|None, Fehlertext|None, Ortsname)
+Resolver = Callable[[object], tuple]          # Event -> (Route|None, error text|None, place name)
 TempAt = Callable[[datetime], Optional[float]]
 
 
@@ -30,12 +30,12 @@ def _fmt(dt: datetime, tz: str) -> str:
 
 def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: float,
              resolve: Resolver, temp_at: TempAt, overrides: Optional[dict] = None) -> Evaluation:
-    """overrides: {override_key(event): Override} aus der Oberflaeche."""
+    """overrides: {override_key(event): Override} from the UI."""
     ev = Evaluation()
     notices = ev.notices
     overrides = overrides or {}
     manual_drive = timedelta(minutes=cfg.manual_drive_min)
-    # 1. je Termin einstufen, Strecke und Bedarf bestimmen
+    # 1. classify each event, determine route and demand
     for e in sorted(events, key=lambda x: x.start):
         it = Item(event=e)
         ev.items.append(it)
@@ -45,7 +45,7 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
         if ov.mode == "none":
             it.status, it.detail = "manuell_aus", "per Oberfläche: kein Auto"
             continue
-        # Auto ist gesetzt, wenn "Auto" gewaehlt oder ein Ziel vorgegeben wurde (ein Ziel heisst: hier wird geladen)
+        # Car is set if "Auto" was chosen or a target was given (a target means: charge here)
         forced = ov.mode == "car" or ov.target is not None
         if not has_loc and not forced:
             it.status, it.detail = "kein_ort", "Termin ohne Ort wird ignoriert"
@@ -63,7 +63,7 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
             if ov.target is None:
                 if has_loc:
                     it.status, it.detail = "adresse_unklar", err or "Adresse nicht auflösbar"
-                    if not (err or "").startswith("ORS nicht erreichbar"):     # Ausfall wird einmal gesammelt gemeldet
+                    if not (err or "").startswith("ORS nicht erreichbar"):     # outage is reported once, collectively
                         notices.append(Notice("addr:%s" % e.uid,
                                               "Adresse unklar bei '%s' (%s). Für diesen Termin gibt es keinen Ladeplan."
                                               % (e.title, it.detail)))
@@ -73,7 +73,7 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
                                           "'%s' ist als Auto-Termin markiert, hat aber keinen Ort. Wähle in der "
                                           "Oberfläche ein Ziel, sonst gibt es keinen Ladeplan." % e.title))
                 continue
-            # Strecke unbekannt, aber Ziel vorgegeben: mit angenommener Fahrzeit planen
+            # route unknown but target given: plan with an assumed travel time
             it.manual = True
             drive = manual_drive
             it.detail = "Ziel manuell, Fahrzeit angenommen (%g min)" % cfg.manual_drive_min
@@ -98,7 +98,7 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
             continue
         it.status = "auto"
 
-    # 2. Kette der Auto-Termine, Ueberschneidungen ausschliessen
+    # 2. chain of car events, exclude overlaps
     autos = [i for i in ev.items if i.status == "auto"]
     chain: list = []
     for it in autos:
@@ -119,8 +119,8 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
         ev.skipped_reason = "Kein planbarer Auto-Termin im Zeitraum"
         return ev
 
-    # 3. rueckwaerts rechnen: benoetigter Ladestand bei Abfahrt je Termin.
-    #    Ein vorgegebenes Ziel gilt genau so; ohne berechneten Bedarf zaehlt (Ziel - Reserve) als Fahrbedarf.
+    # 3. work backwards: required charge level at departure for each event.
+    #    A given target applies as-is; without computed demand, (target - reserve) counts as driving demand.
     def fixed(it):
         return it.override.target if it.override and it.override.target is not None else None
 
@@ -175,9 +175,9 @@ def _target(need: float, reserve: float) -> tuple:
     return min(100, calc.ceil5(raw)), raw > 100.0
 
 
-# ---------------------------------------------------------------- Kontexthinweise
+# ---------------------------------------------------------------- Context notices
 def next_occurrence(plan: dict, after: datetime, before: datetime) -> Optional[datetime]:
-    """Naechster Zeitpunkt eines Wiederholplans im Fenster (after, before]."""
+    """Next occurrence of a repeating plan in the window (after, before]."""
     try:
         tz = ZoneInfo(plan.get("tz") or "UTC")
         hh, mm = [int(x) for x in str(plan["time"]).split(":")[:2]]
@@ -189,7 +189,7 @@ def next_occurrence(plan: dict, after: datetime, before: datetime) -> Optional[d
     best = None
     d = d0
     while d <= d1:
-        if (d.isoweekday() % 7) in days:              # evcc: 0 = Sonntag
+        if (d.isoweekday() % 7) in days:              # evcc: 0 = Sunday
             cand = datetime(d.year, d.month, d.day, hh, mm, tzinfo=tz).astimezone(timezone.utc)
             if after < cand <= before and (best is None or cand < best):
                 best = cand
@@ -201,12 +201,12 @@ def context_notices(desired: Desired, repeating_plans: list, vehicle_limit_soc: 
                     cfg, capacity_kwh: float, now: datetime) -> list:
     out = []
     t = desired.item.event.title
-    # Fahrzeug-Limit
+    # Vehicle limit
     if vehicle_limit_soc is not None and 0 < vehicle_limit_soc < cfg.vehicle_limit_min:
         out.append(Notice("carlimit:%s:%d" % (desired.item.event.uid, int(vehicle_limit_soc)),
                           "Das Ladelimit im Auto steht auf %d %%. Für '%s' ist ein Ziel von %d %% geplant, "
                           "das Auto bricht sonst früher ab." % (vehicle_limit_soc, t, desired.soc)))
-    # zu enge Planung mit aktiven Wiederholplaenen davor
+    # planning too tight with active repeating plans before it
     for p in repeating_plans or []:
         if not p.get("active"):
             continue
@@ -227,7 +227,7 @@ def context_notices(desired: Desired, repeating_plans: list, vehicle_limit_soc: 
     return out
 
 
-# ---------------------------------------------------------------- Abgleich mit evcc
+# ---------------------------------------------------------------- Reconciliation with evcc
 @dataclass
 class Action:
     kind: str          # set | delete | none | manual
@@ -252,7 +252,7 @@ def _same(plan: Optional[dict], soc: int, time: datetime) -> bool:
 
 def reconcile(desired: Optional[Desired], current: Optional[dict], last_set: Optional[dict],
               now: datetime) -> Action:
-    """current = vehicles.<n>.plan aus evcc, last_set = {'soc','time'} aus unserem Speicher."""
+    """current = vehicles.<n>.plan from evcc, last_set = {'soc','time'} from our store."""
     cur_time = _parse(current.get("time")) if current else None
     cur_future = bool(current) and cur_time is not None and cur_time > now
     ours = bool(current) and bool(last_set) and _same(current, int(last_set["soc"]), _parse(last_set["time"]))

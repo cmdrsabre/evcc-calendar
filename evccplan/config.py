@@ -18,7 +18,7 @@ class Config:
     ha_url: str = ""
     ha_token: str = ""
     ha_calendar: str = "calendar.a_a"
-    notify_targets: dict = field(default_factory=dict)   # Stufe -> notify-Entitaeten
+    notify_targets: dict = field(default_factory=dict)   # level -> notify entities
     ha_weather: str = ""
     evcc_url: str = ""
     evcc_key: str = ""
@@ -31,7 +31,7 @@ class Config:
     reserve_soc: float = 10.0
     unclear_cap_soc: int = 80
     min_car_km: float = 4.0
-    manual_drive_min: float = 45.0   # angenommene Fahrzeit bei Terminen ohne berechnete Strecke
+    manual_drive_min: float = 45.0   # assumed travel time for events without a computed route
     time_buffer_min: float = 30.0
     charge_power_kw: float = 11.0
     charge_loss_margin: float = 0.15
@@ -44,7 +44,7 @@ class Config:
     web_host: str = "0.0.0.0"
     web_port: int = 80
     db_path: str = "/data/state.db"
-    personal_dir: str = ""           # eigene Bilder (nicht im Repo); Standard: Ordner "personal" neben der Datenbank
+    personal_dir: str = ""           # personal images (not in the repo); default: "personal" folder next to the database
     timezone: str = "Europe/Berlin"
     retries: int = 3
     retry_delay_s: float = 5.0
@@ -113,7 +113,7 @@ def load(path: str) -> Config:
 
 
 def problems(c: Config) -> list:
-    """Pflichtangaben pruefen; Texte ohne Geheimnisse."""
+    """Check required settings; messages contain no secrets."""
     out = []
     if not c.ha_url:
         out.append("ha.url fehlt")

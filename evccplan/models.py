@@ -26,18 +26,18 @@ class Classification:
     mode: Mode
     unclear: bool
     reason: str
-    explicit: bool = False   # Stichwort Auto/Bahn im Text (nicht Regel/Default)
+    explicit: bool = False   # keyword car/train in the text (not rule/default)
 
 
 @dataclass(frozen=True)
 class Override:
-    """Manuelle Vorgabe fuer einen Termin (aus der Web-Oberflaeche)."""
-    mode: Optional[str] = None      # None = automatisch | "car" = Auto erzwingen | "none" = kein Auto
-    target: Optional[int] = None    # Ziel-SoC in %, None = berechnen
+    """Manual override for an event (from the web UI)."""
+    mode: Optional[str] = None      # None = automatic | "car" = force car | "none" = no car
+    target: Optional[int] = None    # target SoC in %, None = compute
 
 
 def override_key(event: "Event") -> str:
-    """Stabiler Schluessel je Termin-Instanz (Serientermine teilen sich die UID, daher mit Datum)."""
+    """Stable key per event instance (recurring events share the UID, hence the date is included)."""
     return "%s@%s" % (event.uid, event.start.strftime("%Y-%m-%d"))
 
 
@@ -52,16 +52,16 @@ class Place:
 
 @dataclass
 class Route:
-    distance_km: float       # einfache Strecke
-    duration_min: float      # einfache Fahrzeit
-    estimated: bool = False  # True = Luftlinie x Faktor statt Routing
+    distance_km: float       # one-way distance
+    duration_min: float      # one-way travel time
+    estimated: bool = False  # True = straight-line distance x factor instead of routing
 
 
 @dataclass
 class Notice:
     key: str
     text: str
-    ttl_hours: Optional[float] = None   # None = pro Schluessel nur einmal
+    ttl_hours: Optional[float] = None   # None = only once per key
     level: str = "warning"              # info | warning | error
 
 
@@ -81,7 +81,7 @@ class Item:
     target_alone: Optional[int] = None
     target_chain: Optional[int] = None
     override: Optional[Override] = None
-    manual: bool = False             # keine Strecke berechnet, Ziel kommt aus der Vorgabe
+    manual: bool = False             # no route computed, target comes from the override
 
 
 @dataclass
