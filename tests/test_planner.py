@@ -12,7 +12,7 @@ NOW = datetime(2026, 10, 9, 10, 0, tzinfo=UTC)
 
 
 def cfg(**kw):
-    c = Config(rules=[Rule("firma*", Mode.BAHN), Rule("uni*", Mode.AUTO)])
+    c = Config(rules=[Rule("firma*", Mode.BAHN), Rule("uni*", Mode.AUTO)], language="de")
     for k, v in kw.items():
         setattr(c, k, v)
     return c

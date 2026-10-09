@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from . import i18n
 from .classify import Rule
 from .models import Mode
 
@@ -58,6 +59,10 @@ def validate(data) -> dict:
     for k, v in data.items():
         if k == "rules":
             out[k] = _rules(v)
+        elif k == "language":
+            if v not in i18n.available():
+                raise ValueError("language: unknown language")
+            out[k] = v
         elif k in FIELDS:
             out[k] = _number(k, v)
         else:
@@ -76,6 +81,7 @@ class Settings:
 
     def _snapshot(self) -> dict:
         snap = {k: getattr(self.cfg, k) for k in FIELDS}
+        snap["language"] = self.cfg.language
         snap["rules"] = [{"match": r.match, "mode": r.mode.value} for r in self.cfg.rules]
         return snap
 
@@ -83,6 +89,8 @@ class Settings:
         for k, v in values.items():
             if k == "rules":
                 self.cfg.rules = [Rule(r["match"], Mode(r["mode"])) for r in v]
+            elif k == "language":
+                self.cfg.language = v
             else:
                 setattr(self.cfg, k, v)
 
