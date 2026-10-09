@@ -156,7 +156,7 @@ def env():
     srv = Server(evcc_state(), CAL)
     cfg = Config(ha_url=srv.url, ha_token="tok", ha_calendar="calendar.a_a", notify_targets=TARGETS,
                  evcc_url=srv.url, evcc_key="tok", evcc_vehicle="db:1", ors_key="k", home_lat=52.3, home_lon=13.2,
-                 rules=[Rule("firma*", Mode.BAHN), Rule("uni*", Mode.AUTO)], dry_run=False, retry_delay_s=0)
+                 rules=[Rule("firma*", Mode.BAHN), Rule("uni*", Mode.AUTO)], dry_run=False, retry_delay_s=0, language="de")
     ors = TableOrs()
     store = Store(":memory:")
     state = {"now": datetime(2026, 10, 12, 6, 0, tzinfo=UTC)}      # after departure for the MEG event
