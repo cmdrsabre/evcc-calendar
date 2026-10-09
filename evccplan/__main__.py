@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import shutil
 import sys
+from pathlib import Path
 import threading
 import time
 
@@ -20,6 +22,17 @@ def build(cfg) -> Runner:
                   EvccClient(cfg.evcc_url, cfg.evcc_key), OrsClient(cfg.ors_key) if cfg.ors_key else None)
 
 
+def ensure_config(path: str) -> None:
+    """First start: create the config file from the bundled example if it does not exist yet."""
+    target = Path(path)
+    example = Path(__file__).resolve().parent.parent / "config.example.yaml"
+    if target.exists() or not example.is_file():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(example, target)
+    logging.warning("Keine Konfiguration gefunden, Beispiel nach %s kopiert. Bitte anpassen.", target)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="evccplan")
     ap.add_argument("command", choices=["serve", "once"])
@@ -27,6 +40,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="once: nichts schreiben, egal was die Config sagt")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    ensure_config(args.config)
     cfg = cfgmod.load(args.config)
     missing = cfgmod.problems(cfg)
     if missing:

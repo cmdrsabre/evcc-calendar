@@ -4,21 +4,21 @@
 home:
   lat: 0.0              # 0/0 = unknown, then `address` is geocoded once
   lon: 0.0
-  address: "Wacholderweg 4, 14974 Ludwigsfelde"
+  address: "Musterstrasse 1, 10115 Berlin"
 
 ha:
-  url: http://192.168.178.88:8123
+  url: http://homeassistant.local:8123
   token_env: HA_TOKEN                 # Long-Lived Access Token
-  calendar: calendar.a_a              # display name "A&a"
+  calendar: calendar.family              # entity id of your calendar
   notify_targets:                     # notify.send_message with these target entities
-    info:    [notify.iduke_nukem_plus]                                  # confirmations
-    warning: [notify.iduke_nukem_plus, notify.home_assistant_telegram_bot_hugh_hefner]
-    error:   [notify.iduke_nukem_plus, notify.home_assistant_telegram_bot_hugh_hefner,
-              notify.hobbyraum_echo_dot_durchsagen]                      # Alexa announcement only for errors
+    info:    [notify.mobile_app_phone]                                  # confirmations
+    warning: [notify.mobile_app_phone, notify.telegram_bot]
+    error:   [notify.mobile_app_phone, notify.telegram_bot,
+              notify.echo_announce]                      # Alexa announcement only for errors
   weather: weather.forecast_home      # fallback temperature source
 
 evcc:
-  url: http://192.168.178.10:7070
+  url: http://evcc.local:7070
   api_key_env: EVCC_API_KEY
   vehicle: "db:1"                     # name from /api/state (empty = the only vehicle)
 
@@ -45,7 +45,7 @@ vehicle_limit_min: 100                # warn if the limit set in the car is belo
 
 # Rules: whole words in the title, case-insensitive, * only within a word.
 rules:
-  - {match: "fritz*", mode: bahn}
+  - {match: "office*", mode: bahn}
   - {match: "uni*", mode: auto}
 
 retries: 3                            # attempts per service and run (evcc, calendar)

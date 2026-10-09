@@ -89,3 +89,8 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 
 ## License
 [MIT](LICENSE.md). Third-party components are listed there as well.
+
+## Unraid
+A template for the Unraid Docker UI is in `templates/evcc-calendar.xml`. Until it is listed in Community Applications, copy it to
+`/boot/config/plugins/dockerMan/templates-user/evcc-calendar.xml` on the server. It then shows up under Docker → Add Container → Template.
+On first start an example `config.yaml` is created in the appdata folder; edit it and restart the container.

@@ -4,6 +4,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY evccplan ./evccplan
+COPY config.example.yaml ./config.example.yaml
 RUN useradd -r -u 1000 app && mkdir /data && chown app /data
 USER app
 VOLUME /data
