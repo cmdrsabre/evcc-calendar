@@ -4,7 +4,7 @@ from evccplan import address, calc
 from evccplan.classify import Rule, classify
 from evccplan.models import Mode
 
-RULES = [Rule("fritz*", Mode.BAHN), Rule("uni*", Mode.AUTO)]
+RULES = [Rule("firma*", Mode.BAHN), Rule("uni*", Mode.AUTO)]
 
 
 def test_keywords_are_whole_words_case_insensitive():
@@ -21,35 +21,35 @@ def test_both_keywords_is_unclear_auto():
 
 
 def test_rules_match_words_not_substrings():
-    assert classify("Axel bei Fritz!", "", RULES).mode == Mode.BAHN
-    assert classify("Anne Uni", "", RULES) .unclear is False
+    assert classify("Max bei Firma!", "", RULES).mode == Mode.BAHN
+    assert classify("Lisa Uni", "", RULES) .unclear is False
     assert classify("Universität Besuch", "", RULES).unclear is False
     assert classify("Munition", "", RULES).reason == "Standard: Auto"   # no Uni match
 
 
 def test_keyword_beats_rule():
-    assert classify("Fritz mit dem Auto", "", RULES).mode == Mode.AUTO
+    assert classify("Firma mit dem Auto", "", RULES).mode == Mode.AUTO
 
 
 def test_multiword_rule():
     r = [Rule("vhs ludwigsfelde", Mode.AUTO)]
-    assert classify("Kurs VHS Ludwigsfelde heute", "", r).unclear is False
+    assert classify("Kurs VHS Musterstadt heute", "", r).unclear is False
     assert classify("VHS Berlin", "", r).reason == "Standard: Auto"
 
 
 @pytest.mark.parametrize("text,first", [
-    ("Albert-Schweitzer-Straße 40, 14974 Ludwigsfelde", "Albert-Schweitzer-Straße 40, 14974 Ludwigsfelde"),
-    ("Isabelle Plessow Kinder- und Jugendlichenpsychotherapeutin Roedernstraße 15, 12459 Berlin",
-     "Roedernstraße 15, 12459 Berlin"),
-    ("Smart Care MVZ Ludwigsfelde - Dr. Juliana Guerrero Straße der Jugend 63 14974 Ludwigsfelde",
-     "Straße der Jugend 63, 14974 Ludwigsfelde"),
-    ("Stromstraße 7\n10555 Berlin\nDeutschland", "Stromstraße 7, 10555 Berlin"),
-    ("Mittelallee 2, 13353 Berlin", "Mittelallee 2, 13353 Berlin"),
-    ("Volkshochschule Treptow-Köpenick, Baumschulenstraße 79-81, 12437 Berlin, Deutschland",
-     "Baumschulenstraße 79-81, 12437 Berlin"),
-    ("Hochschule für Technik und Wirtschaft Berlin (HTW Berlin) - Campus Wilhelminenhof, "
-     "Wilhelminenhofstraße 75A, 12459 Berlin-Bezirk Treptow-Köpenick, Deutschland",
-     "Wilhelminenhofstraße 75A, 12459 Berlin"),
+    ("Beispielweg 40, 14974 Musterstadt", "Beispielweg 40, 14974 Musterstadt"),
+    ("Erika Beispiel Fachpraxis Rosenstraße 15, 12459 Berlin",
+     "Rosenstraße 15, 12459 Berlin"),
+    ("Beispiel MVZ Musterstadt - Dr. Erika Muster Lindenstraße 63 14974 Musterstadt",
+     "Lindenstraße 63, 14974 Musterstadt"),
+    ("Hauptstraße 7\n10555 Berlin\nDeutschland", "Hauptstraße 7, 10555 Berlin"),
+    ("Parkallee 2, 13353 Berlin", "Parkallee 2, 13353 Berlin"),
+    ("Volkshochschule Beispielstadt, Gartenstraße 79-81, 12437 Berlin, Deutschland",
+     "Gartenstraße 79-81, 12437 Berlin"),
+    ("Hochschule Beispiel (HB Berlin) - Campus Nord, "
+     "Uferstraße 75A, 12459 Berlin-Bezirk Beispielbezirk, Deutschland",
+     "Uferstraße 75A, 12459 Berlin"),
 ])
 def test_address_prefilter_real_locations(text, first):
     c = address.candidates(text)
@@ -58,7 +58,7 @@ def test_address_prefilter_real_locations(text, first):
 
 
 def test_address_without_plz_and_free_text():
-    assert address.candidates("Mittelallee 2")[0] == "Mittelallee 2"
+    assert address.candidates("Parkallee 2")[0] == "Parkallee 2"
     assert address.candidates("Zuhause") == ["Zuhause"]
     assert address.candidates("  ") == []
 

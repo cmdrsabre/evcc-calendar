@@ -128,17 +128,17 @@ def test_override_changes_plan_and_triggers_run(web):
     c, runner, srv, store, _ = web
     setup_login(c)
     st = wait_idle(c)
-    arthur = next(i for i in st["items"] if i["title"].startswith("Auswertungsgespräch"))
-    assert arthur["status"] == "geplant" and arthur["override_mode"] is None
-    code, _, _ = c.call("POST", "/api/override", {"key": arthur["key"], "mode": None, "target": 90})
+    meeting = next(i for i in st["items"] if i["title"].startswith("Besprechung"))
+    assert meeting["status"] == "geplant" and meeting["override_mode"] is None
+    code, _, _ = c.call("POST", "/api/override", {"key": meeting["key"], "mode": None, "target": 90})
     assert code == 202
     st = wait_idle(c)
-    arthur = next(i for i in st["items"] if i["title"].startswith("Auswertungsgespräch"))
-    assert arthur["override_target"] == 90 and arthur["target_chain"] == 90
+    meeting = next(i for i in st["items"] if i["title"].startswith("Besprechung"))
+    assert meeting["override_target"] == 90 and meeting["target_chain"] == 90
     assert st["desired"]["soc"] == 90
     assert any("/plan/soc/90/" in p for _, p in srv.calls)                  # configured live: was written to evcc
     # reset
-    c.call("POST", "/api/override", {"key": arthur["key"], "mode": None, "target": None})
+    c.call("POST", "/api/override", {"key": meeting["key"], "mode": None, "target": None})
     st = wait_idle(c)
     assert st["desired"]["soc"] == 45
 
@@ -147,15 +147,15 @@ def test_override_no_car_and_validation(web):
     c, runner, srv, store, _ = web
     setup_login(c)
     st = wait_idle(c)
-    arthur = next(i for i in st["items"] if i["title"].startswith("Auswertungsgespräch"))
-    assert c.call("POST", "/api/override", {"key": arthur["key"], "mode": "x"})[0] == 400
-    assert c.call("POST", "/api/override", {"key": arthur["key"], "mode": None, "target": 42})[0] == 400
-    assert c.call("POST", "/api/override", {"key": arthur["key"], "mode": None, "target": True})[0] == 400
+    meeting = next(i for i in st["items"] if i["title"].startswith("Besprechung"))
+    assert c.call("POST", "/api/override", {"key": meeting["key"], "mode": "x"})[0] == 400
+    assert c.call("POST", "/api/override", {"key": meeting["key"], "mode": None, "target": 42})[0] == 400
+    assert c.call("POST", "/api/override", {"key": meeting["key"], "mode": None, "target": True})[0] == 400
     assert c.call("POST", "/api/override", {"key": "gibt-es-nicht", "mode": "none"})[0] == 404
-    assert c.call("POST", "/api/override", {"key": arthur["key"], "mode": "none"})[0] == 202
+    assert c.call("POST", "/api/override", {"key": meeting["key"], "mode": "none"})[0] == 202
     st = wait_idle(c)
-    assert next(i for i in st["items"] if i["key"] == arthur["key"])["status"] == "manuell_aus"
-    assert st["desired"]["title"] != arthur["title"]
+    assert next(i for i in st["items"] if i["key"] == meeting["key"])["status"] == "manuell_aus"
+    assert st["desired"]["title"] != meeting["title"]
 
 
 def test_event_without_address_can_be_planned_from_ui(web):

@@ -12,7 +12,7 @@ NOW = datetime(2026, 10, 9, 10, 0, tzinfo=UTC)
 
 
 def cfg(**kw):
-    c = Config(rules=[Rule("fritz*", Mode.BAHN), Rule("uni*", Mode.AUTO)])
+    c = Config(rules=[Rule("firma*", Mode.BAHN), Rule("uni*", Mode.AUTO)])
     for k, v in kw.items():
         setattr(c, k, v)
     return c
@@ -36,7 +36,7 @@ def run(events, routes, c=None, cap=54, min_soc=30, temp=12.0, now=NOW):
 
 def test_single_event_target_and_time():
     start = datetime(2026, 10, 13, 8, 40, tzinfo=UTC)
-    e = ev("a", "Charité Uni", start)
+    e = ev("a", "Klinik Uni", start)
     r = run([e], {"a": Route(47.4, 52)})
     d = r.desired
     assert d.soc == 50                                   # 35.1 % + 10 -> 45.1 -> 50
@@ -66,7 +66,7 @@ def test_short_distance_is_not_a_car_event():
 
 def test_no_location_and_bahn_ignored():
     s = datetime(2026, 10, 13, 8, 0, tzinfo=UTC)
-    r = run([ev("a", "Kinder bei Omi", s, loc=""), ev("b", "Axel bei Fritz!", s)], {"b": Route(45, 50)})
+    r = run([ev("a", "Kinder bei Omi", s, loc=""), ev("b", "Max bei Firma!", s)], {"b": Route(45, 50)})
     assert r.desired is None
     assert [i.status for i in r.items] == ["kein_ort", "bahn"]
 
@@ -232,7 +232,7 @@ def test_override_none_excludes_event():
 
 def test_override_car_beats_bahn_rule_and_nah_rule():
     s = datetime(2026, 10, 13, 8, 0, tzinfo=UTC)
-    b, n = ev("b", "Fritz Besuch", s), ev("n", "Arzt", s + timedelta(days=1))
+    b, n = ev("b", "Firma Besuch", s), ev("n", "Arzt", s + timedelta(days=1))
     ov = {override_key(b): Override("car"), override_key(n): Override("car", 60)}
     r = run_ov([b, n], {"b": Route(45, 50), "n": Route(1.5, 6)}, ov)
     assert r.items[0].status == "geplant"
