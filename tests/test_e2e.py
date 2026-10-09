@@ -304,7 +304,7 @@ class DeadEvcc(EvccClient):
 
     def state(self):
         DeadEvcc.attempts += 1
-        raise ApiError("GET 192.168.178.10:7070/api/state: Connection refused")
+        raise ApiError("GET evcc.local:7070/api/state: Connection refused")
 
 
 def test_evcc_down_three_attempts_then_alarm_once(env):

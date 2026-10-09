@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3
+- Docker image carries OCI labels (source repository, description, license), so the GitHub package is linked to the repo.
+- Unraid template (`templates/evcc-calendar.xml`) and icon.
+- An example `config.yaml` is created in the data folder on first start if none exists.
+- Example config and tests contain only fictional data.
+
 ## 0.2.1
 - Docker image published to ghcr.io (`ghcr.io/cmdrsabre/evcc-calendar`), built on version tags (`v*.*.*`).
 - `docker-compose.yml` uses the published image; `--build` still builds locally.
