@@ -13,6 +13,7 @@ from .clients import (ApiError, EvccClient, EvccDown, HAClient, OrsClient, OrsDo
 from .models import Event
 from .config import Config
 from .models import Notice, Route, override_key
+from .settings import Settings
 from .store import Store
 
 log = logging.getLogger("evccplan")
@@ -27,6 +28,7 @@ class Runner:
     def __init__(self, cfg: Config, store: Store, ha: HAClient, evcc: EvccClient, ors: Optional[OrsClient],
                  now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
         self.cfg, self.store, self.ha, self.evcc, self.ors, self.now_fn = cfg, store, ha, evcc, ors, now_fn
+        self.settings = Settings(cfg, store)
         self._lock = threading.Lock()
         self._state: dict = {}
         self._last_ok: dict = {}
@@ -140,7 +142,22 @@ class Runner:
             if not force_dry:
                 self.store.put("last_run", res)
             self._state = res
+            self._record(res)
             return res
+
+    def _record(self, res: dict) -> None:
+        """One compact history entry per run (shown in the UI)."""
+        act, dz = res.get("action") or {}, res.get("desired") or {}
+        try:
+            self.store.run_add({
+                "time": res["time"], "dry_run": res["dry_run"], "ok": res["ok"], "error": res["error"],
+                "action": act.get("kind"), "reason": act.get("reason"), "done": act.get("done"),
+                "action_error": act.get("error"), "soc": dz.get("soc"), "plan_time": dz.get("time"),
+                "title": dz.get("title"), "items": len(res.get("items") or []),
+                "notices": len(res.get("notices") or []), "problems": len(res.get("problems") or []),
+            })
+        except Exception:                                      # history must never break a run
+            log.exception("Verlauf konnte nicht gespeichert werden")
 
     def _fail(self, res: dict, exc: Exception, dry: bool, notice: Notice) -> None:
         res["error"] = str(exc)

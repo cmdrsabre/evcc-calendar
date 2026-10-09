@@ -6,7 +6,7 @@
   const SVGNS = 'http://www.w3.org/2000/svg';
   const CAR_SVG = '<svg viewBox="0 0 320 120" aria-hidden="true"><path d="M14 86c0-9 4-15 12-18l34-10c10-14 22-24 40-30 20-6 52-6 76-2 28 5 44 18 60 34l44 8c14 3 26 8 32 16 5 7 4 12 4 16H14z"/><path class="glass" d="M82 56c8-9 16-16 30-19 20-4 40-3 56 0v21H82zM178 38c14 3 26 10 38 20h-38z"/><circle class="tyre" cx="84" cy="100" r="17"/><circle class="tyre" cx="244" cy="100" r="17"/><circle class="rim" cx="84" cy="100" r="7"/><circle class="rim" cx="244" cy="100" r="7"/></svg>';
 
-  const S = { status: null, pending: {}, cards: new Map(), sig: '', tz: 'Europe/Berlin', timer: null, fmt: null, targets: [] };
+  const S = { tab: 'plan', settings: null, status: null, pending: {}, cards: new Map(), sig: '', tz: 'Europe/Berlin', timer: null, fmt: null, targets: [] };
 
   // ------------------------------------------------------------ Helpers
   function icon(name) {
@@ -135,6 +135,7 @@
     } else {
       toast(r.data.error || 'Der Stand konnte nicht geladen werden.', true);
     }
+    if (S.tab === 'history' && r.ok && !r.data.busy) loadHistory();
     const busy = r.ok && r.data.busy;
     $('progress').hidden = !busy;
     $('btn-run').disabled = !!busy;
@@ -409,8 +410,159 @@
     refresh();
   }
 
+  // ------------------------------------------------------------ Tabs
+  function showTab(name) {
+    S.tab = name;
+    document.querySelectorAll('#tabs button').forEach((b) => {
+      if (b.dataset.tab === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    $('tab-plan').hidden = name !== 'plan';
+    $('tab-history').hidden = name !== 'history';
+    $('tab-settings').hidden = name !== 'settings';
+    if (name === 'history') loadHistory();
+    if (name === 'settings') loadSettings();
+  }
+
+  // ------------------------------------------------------------ History
+  function runText(r) {
+    if (!r.ok) return ['bad', 'Fehler: ' + (r.error || 'unbekannt')];
+    const plan = r.soc != null ? r.soc + ' % bis ' + S.fmt.short.format(d(r.plan_time)) + ' Uhr für „' + r.title + '“' : null;
+    const a = r.action;
+    if (a === 'set') return [r.done ? 'ok' : '', r.done ? 'Plan gesetzt: ' + plan : (r.dry_run ? 'Würde setzen: ' : 'Setzen fehlgeschlagen: ') + plan];
+    if (a === 'delete') return [r.done ? 'ok' : '', r.done ? 'Plan entfernt' : 'Würde Plan entfernen'];
+    if (a === 'manual') return ['warn', 'Manueller Plan in evcc, nicht geändert'];
+    return ['', plan ? 'Keine Änderung (' + plan + ')' : 'Kein Ladeplan nötig'];
+  }
+
+  async function loadHistory() {
+    const r = await api('GET', '/api/history');
+    if (r.status === 401) return boot();
+    if (!r.ok) return toast(r.data.error || 'Der Verlauf konnte nicht geladen werden.', true);
+    if (!S.fmt) S.fmt = makeFormatters(S.tz);
+    const runs = r.data.runs || [];
+    $('runs-empty').hidden = runs.length > 0;
+    const ul = $('runs-list');
+    ul.replaceChildren();
+    runs.forEach((run) => {
+      const [cls, txt] = runText(run);
+      const li = el('li', 'run ' + cls);
+      li.append(el('span', 'run-time', S.fmt.short.format(d(run.time))),
+        el('span', 'chip ' + (run.dry_run ? 'dry' : 'live'), run.dry_run ? 'Dry-Run' : 'Scharf'),
+        el('span', 'run-text', txt));
+      if (run.problems) li.append(el('span', 'run-note', run.problems + ' Problem' + (run.problems > 1 ? 'e' : '')));
+      ul.append(li);
+    });
+  }
+
+  // ------------------------------------------------------------ Settings
+  const GROUPS = [
+    ['Verbrauch', [['warm', 'Verbrauch warm', 'kWh/100 km'], ['cold', 'Verbrauch kalt', 'kWh/100 km'], ['temp_threshold_c', 'Ab dieser Temperatur gilt „warm“', '°C']]],
+    ['Ladung', [['reserve_soc', 'Reserve bei Rückkehr', '%'], ['unclear_cap_soc', 'Deckel bei unklarer Einstufung', '%'],
+      ['charge_power_kw', 'Ladeleistung zu Hause', 'kW'], ['charge_loss_margin', 'Verlustreserve beim Nachladen (0 bis 1)', ''],
+      ['vehicle_limit_min', 'Warnen, wenn das Limit im Auto darunter liegt', '%']]],
+    ['Fahrten', [['min_car_km', 'Einfache Strecke darunter: zu Fuß oder Rad', 'km'], ['manual_drive_min', 'Fahrzeit ohne Adresse', 'min'],
+      ['time_buffer_min', 'Puffer vor der Abfahrt', 'min'], ['chain_window_h', 'Zeitfenster für Folgetermine', 'h']]],
+  ];
+
+  function buildSettings(data) {
+    const box = $('settings-groups');
+    box.replaceChildren();
+    S.inputs = {};
+    GROUPS.forEach(([title, fields]) => {
+      const fs = el('fieldset', 'group', el('legend', null, title));
+      fields.forEach(([key, label, unit]) => {
+        const lim = data.limits[key];
+        const inp = el('input');
+        inp.type = 'number';
+        inp.id = 'set-' + key;
+        inp.min = lim.min; inp.max = lim.max;
+        inp.step = lim.int ? '1' : 'any';
+        inp.required = true;
+        S.inputs[key] = inp;
+        const lab = el('label', 'field row', el('span', null, label), el('span', 'inp', inp, el('em', null, unit || '')));
+        fs.append(lab);
+      });
+      box.append(fs);
+    });
+  }
+
+  function fillSettings(data) {
+    S.settings = data;
+    for (const [key, inp] of Object.entries(S.inputs)) {
+      inp.value = String(data.values[key]);
+      inp.parentElement.parentElement.classList.toggle('changed', data.changed.includes(key));
+    }
+    const ul = $('rules-list');
+    ul.replaceChildren();
+    data.values.rules.forEach((r) => addRuleRow(r.match, r.mode));
+    $('settings-reset').hidden = !data.changed.length;
+  }
+
+  function addRuleRow(match, mode) {
+    const m = el('input');
+    m.type = 'text'; m.maxLength = 40; m.value = match || ''; m.placeholder = 'Suchwort, z. B. firma*';
+    m.setAttribute('aria-label', 'Suchwort');
+    const sel = el('select');
+    [['auto', 'Auto'], ['bahn', 'Bahn']].forEach(([v, t]) => { const o = el('option', null, t); o.value = v; sel.append(o); });
+    sel.value = mode || 'auto';
+    sel.setAttribute('aria-label', 'Einstufung');
+    const rm = el('button', 'link', 'Entfernen');
+    rm.type = 'button';
+    const li = el('li', 'rule', m, sel, rm);
+    rm.addEventListener('click', () => li.remove());
+    $('rules-list').append(li);
+    return m;
+  }
+
+  function readRules() {
+    return Array.from($('rules-list').children).map((li) => ({ match: li.querySelector('input').value.trim(), mode: li.querySelector('select').value }))
+      .filter((r) => r.match);
+  }
+
+  async function loadSettings() {
+    const r = await api('GET', '/api/settings');
+    if (r.status === 401) return boot();
+    if (!r.ok) return toast(r.data.error || 'Die Einstellungen konnten nicht geladen werden.', true);
+    if (!S.inputs) buildSettings(r.data);
+    fillSettings(r.data);
+  }
+
+  async function saveSettings(ev) {
+    ev.preventDefault();
+    const cur = S.settings.values, values = {};
+    for (const [key, inp] of Object.entries(S.inputs)) {
+      const v = Number(inp.value);
+      if (inp.value === '' || Number.isNaN(v)) continue;
+      if (v !== cur[key]) values[key] = v;
+    }
+    const rules = readRules();
+    if (JSON.stringify(rules) !== JSON.stringify(cur.rules)) values.rules = rules;
+    const err = $('settings-error');
+    err.hidden = true;
+    if (!Object.keys(values).length) return toast('Nichts geändert.');
+    $('settings-save').disabled = true;
+    const r = await api('POST', '/api/settings', { values });
+    $('settings-save').disabled = false;
+    if (!r.ok) { err.textContent = r.data.error || 'Das hat nicht geklappt.'; err.hidden = false; return; }
+    fillSettings(r.data);
+    toast('Gespeichert. Ein neuer Lauf startet.');
+    refresh();
+  }
+
+  async function resetSettings() {
+    const r = await api('POST', '/api/settings', { reset: true });
+    if (!r.ok) return toast(r.data.error || 'Das hat nicht geklappt.', true);
+    fillSettings(r.data);
+    toast('Zurückgesetzt auf die config.yaml.');
+    refresh();
+  }
+
   // ------------------------------------------------------------ Header buttons
   $('auth-form').addEventListener('submit', submitAuth);
+  $('tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); });
+  $('settings-form').addEventListener('submit', saveSettings);
+  $('settings-reset').addEventListener('click', resetSettings);
+  $('rule-add').addEventListener('click', () => addRuleRow('', 'auto').focus());
   $('btn-logout').addEventListener('click', async () => { await api('POST', '/api/logout', {}); S.cards.clear(); S.sig = ''; $('days').replaceChildren(); boot(); });
   $('btn-run').addEventListener('click', async () => {
     $('btn-run').disabled = true;

@@ -1,2 +1,2 @@
-"""evcc calendar charge planning: sets evcc charging plans from calendar events."""
-__version__ = "0.2.4"
+"""evcc calendar charge planning: sets evcc charging plans from calendar appointments."""
+__version__ = "0.3.0"

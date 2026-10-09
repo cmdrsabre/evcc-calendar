@@ -24,6 +24,7 @@ class Store:
                 CREATE TABLE IF NOT EXISTS overrides (k TEXT PRIMARY KEY, mode TEXT, target INTEGER,
                                                       title TEXT, start TEXT, updated REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS sessions (h TEXT PRIMARY KEY, expires REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, rec TEXT NOT NULL);
                 """
             )
             self._db.commit()
@@ -78,6 +79,18 @@ class Store:
         with self._lock:
             self._db.execute("DELETE FROM overrides WHERE start<>'' AND start<?", (before_iso,))
             self._db.commit()
+
+    # --- Run history
+    def run_add(self, rec: dict, keep: int = 300) -> None:
+        with self._lock:
+            self._db.execute("INSERT INTO runs (ts, rec) VALUES (?,?)", (time.time(), json.dumps(rec)))
+            self._db.execute("DELETE FROM runs WHERE id <= (SELECT MAX(id) FROM runs) - ?", (keep,))
+            self._db.commit()
+
+    def runs(self, limit: int = 100) -> list:
+        with self._lock:
+            rows = self._db.execute("SELECT rec FROM runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [json.loads(r[0]) for r in rows]
 
     # --- Sessions (only the token hash is stored)
     def session_add(self, token_hash: str, expires: float) -> None:
