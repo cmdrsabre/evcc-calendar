@@ -1,0 +1,13 @@
+# Laufzeitdaten und Geheimnisse
+.env
+data/
+personal/
+*.db
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+docs/
+CLAUDE.md
+.DS_Store
