@@ -11,7 +11,7 @@ def test_keywords_are_whole_words_case_insensitive():
     assert classify("Fahrt mit der BAHN", "", RULES).mode == Mode.BAHN
     c = classify("Termin", "bitte mit dem Auto", RULES)
     assert (c.mode, c.unclear) == (Mode.AUTO, False)
-    c = classify("Autohaus Termin", "", RULES)           # kein ganzes Wort -> Standard Auto, klar
+    c = classify("Autohaus Termin", "", RULES)           # not a whole word -> default car, clear
     assert c.mode == Mode.AUTO and not c.unclear and not c.explicit
 
 
@@ -24,7 +24,7 @@ def test_rules_match_words_not_substrings():
     assert classify("Axel bei Fritz!", "", RULES).mode == Mode.BAHN
     assert classify("Anne Uni", "", RULES) .unclear is False
     assert classify("Universität Besuch", "", RULES).unclear is False
-    assert classify("Munition", "", RULES).reason == "Standard: Auto"   # kein Uni-Treffer
+    assert classify("Munition", "", RULES).reason == "Standard: Auto"   # no Uni match
 
 
 def test_keyword_beats_rule():

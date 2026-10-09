@@ -39,7 +39,7 @@ def test_single_event_target_and_time():
     e = ev("a", "Charité Uni", start)
     r = run([e], {"a": Route(47.4, 52)})
     d = r.desired
-    assert d.soc == 50                                   # 35,1 % + 10 -> 45,1 -> 50
+    assert d.soc == 50                                   # 35.1 % + 10 -> 45.1 -> 50
     assert d.time == datetime(2026, 10, 13, 7, 15, tzinfo=UTC)   # 08:40 - 52 min - 30 min = 07:18 -> 07:15
     assert r.items[0].status == "geplant"
 
@@ -52,7 +52,7 @@ def test_cold_uses_higher_consumption():
 
 
 def test_below_min_soc_no_plan():
-    e = ev("a", "Uni Auto", datetime(2026, 10, 13, 8, 0, tzinfo=UTC))     # Stichwort Auto erzwingt Auto trotz Nähe
+    e = ev("a", "Uni Auto", datetime(2026, 10, 13, 8, 0, tzinfo=UTC))     # keyword Auto forces car despite proximity
     r = run([e], {"a": Route(2.1, 8)})
     assert r.desired is None and r.items[0].status == "unter_min"
 
@@ -61,7 +61,7 @@ def test_short_distance_is_not_a_car_event():
     s = datetime(2026, 10, 13, 8, 0, tzinfo=UTC)
     r = run([ev("a", "Arzt", s), ev("b", "Uni", s + timedelta(hours=5))], {"a": Route(2.1, 8), "b": Route(47.4, 52)})
     assert r.items[0].status == "nah" and r.items[0].need_soc is None
-    assert r.items[1].status == "geplant"          # nah-Termin steht nicht in der Kette
+    assert r.items[1].status == "geplant"          # nearby event is not part of the chain
 
 
 def test_no_location_and_bahn_ignored():
@@ -80,8 +80,8 @@ def test_unresolvable_address_notice_and_other_event_still_planned():
 
 
 def test_unclear_classification_caps_at_80_with_notice():
-    e = ev("a", "Termin Auto Bahn", datetime(2026, 10, 13, 8, 0, tzinfo=UTC))      # widersprüchlich -> unklar
-    r = run([e], {"a": Route(100, 90)})                                    # Bedarf ~74 % + 10 -> 85
+    e = ev("a", "Termin Auto Bahn", datetime(2026, 10, 13, 8, 0, tzinfo=UTC))      # contradictory -> unclear
+    r = run([e], {"a": Route(100, 90)})                                    # need ~74 % + 10 -> 85
     assert r.desired.soc == 80 and r.desired.capped_from == 85
     assert any("Einstufung unklar" in n.text and "80 %" in n.text and "85 %" in n.text for n in r.notices)
 
@@ -122,7 +122,7 @@ def test_past_departure_skipped():
 
 def test_chain_raises_target_when_gap_too_short():
     a = ev("a", "Uni", datetime(2026, 10, 13, 8, 0, tzinfo=UTC), hours=1)
-    # B beginnt wenig spaeter: Rueckkehr von A ca. 10:00, Abfahrt B ca. 10:20 -> kaum Ladezeit
+    # B starts shortly after: return from A about 10:00, departure for B about 10:20 -> hardly any charging time
     b = ev("b", "Uni", datetime(2026, 10, 13, 11, 40, tzinfo=UTC), hours=1)
     routes = {"a": Route(45, 50), "b": Route(45, 50)}
     r = run([a, b], routes)
@@ -137,7 +137,7 @@ def test_chain_not_raised_with_long_gap():
     b = ev("b", "Uni", datetime(2026, 10, 14, 8, 0, tzinfo=UTC))
     r = run([a, b], {"a": Route(45, 50), "b": Route(45, 50)})
     assert r.items[0].target_chain == r.items[0].target_alone
-    assert r.items[1].status == "spaeter"            # mehr als 5 h Abstand: kein Folgetermin
+    assert r.items[1].status == "spaeter"            # more than 5 h gap: no follow-up event
 
 
 def test_chain_beyond_window_is_later():
@@ -147,7 +147,7 @@ def test_chain_beyond_window_is_later():
     assert r.items[1].status == "spaeter"
 
 
-# ------------------------------------------------------------------ Kontexthinweise
+# ------------------------------------------------------------------ Context notices
 def desired(soc, t, uid="a", title="Uni"):
     it = Item(event=ev(uid, title, t))
     return Desired(item=it, soc=soc, time=t)
@@ -158,18 +158,18 @@ def test_car_limit_warning():
     n = planner.context_notices(d, [], 80, cfg(), 54, NOW)
     assert len(n) == 1 and "80 %" in n[0].text
     assert planner.context_notices(d, [], 100, cfg(), 54, NOW) == []
-    assert planner.context_notices(d, [], 0, cfg(), 54, NOW) == []       # unbekannt
+    assert planner.context_notices(d, [], 0, cfg(), 54, NOW) == []       # unknown
     assert planner.context_notices(d, [], None, cfg(), 54, NOW) == []
 
 
 def test_next_occurrence_weekday_mapping_sunday_zero():
-    plan = {"time": "13:00", "tz": "Europe/Berlin", "weekdays": [0]}     # Sonntag
+    plan = {"time": "13:00", "tz": "Europe/Berlin", "weekdays": [0]}     # Sunday
     occ = planner.next_occurrence(plan, datetime(2026, 10, 9, 0, 0, tzinfo=UTC), datetime(2026, 10, 13, 0, 0, tzinfo=UTC))
-    assert occ == datetime(2026, 10, 11, 11, 0, tzinfo=UTC)               # So 11.10. 13:00 MESZ
+    assert occ == datetime(2026, 10, 11, 11, 0, tzinfo=UTC)               # Sun 11.10. 13:00 CEST
 
 
 def test_tight_repeating_plan_warns():
-    t = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)                          # Samstag 14:00 MESZ
+    t = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)                          # Saturday 14:00 CEST
     rep = [{"active": True, "soc": 50, "time": "13:00", "tz": "Europe/Berlin", "weekdays": [6]}]
     d = desired(90, t)
     n = planner.context_notices(d, rep, None, cfg(), 54, NOW)
@@ -182,11 +182,11 @@ def test_repeating_plan_not_warned_when_inactive_roomy_or_higher():
     d = desired(90, t)
     assert planner.context_notices(d, [dict(base, active=False)], None, cfg(), 54, NOW) == []
     assert planner.context_notices(d, [dict(base, soc=90)], None, cfg(), 54, NOW) == []
-    assert planner.context_notices(d, [dict(base, time="06:00")], None, cfg(), 54, NOW) == []   # genug Zeit
-    assert planner.context_notices(d, [dict(base, weekdays=[2])], None, cfg(), 54, NOW) == []   # anderer Tag
+    assert planner.context_notices(d, [dict(base, time="06:00")], None, cfg(), 54, NOW) == []   # enough time
+    assert planner.context_notices(d, [dict(base, weekdays=[2])], None, cfg(), 54, NOW) == []   # different day
 
 
-# ------------------------------------------------------------------ Abgleich
+# ------------------------------------------------------------------ Reconciliation
 def z(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -200,7 +200,7 @@ def test_reconcile_cases():
     same = {"soc": 60, "time": z(T)}
     assert planner.reconcile(d, same, None, NOW).kind == "none"
     mine_old = {"soc": 50, "time": z(T)}
-    assert planner.reconcile(d, mine_old, mine_old, NOW).kind == "set"            # eigener Plan -> aktualisieren
+    assert planner.reconcile(d, mine_old, mine_old, NOW).kind == "set"            # own plan -> update
     manual = {"soc": 90, "time": z(T + timedelta(hours=3))}
     assert planner.reconcile(d, manual, mine_old, NOW).kind == "manual"
     expired = {"soc": 90, "time": z(NOW - timedelta(days=1))}
@@ -210,12 +210,12 @@ def test_reconcile_cases():
 def test_reconcile_delete_only_own_plan():
     mine = {"soc": 50, "time": z(T)}
     assert planner.reconcile(None, mine, mine, NOW).kind == "delete"
-    assert planner.reconcile(None, mine, None, NOW).kind == "none"                # fremder Plan bleibt
+    assert planner.reconcile(None, mine, None, NOW).kind == "none"                # foreign plan stays
     assert planner.reconcile(None, None, mine, NOW).kind == "none"
     assert planner.reconcile(None, {"soc": 50, "time": z(T + timedelta(hours=1))}, mine, NOW).kind == "none"
 
 
-# ------------------------------------------------------------------ Vorgaben aus der Oberfläche
+# ------------------------------------------------------------------ Overrides from the UI
 from evccplan.models import Override, override_key
 
 
@@ -240,10 +240,10 @@ def test_override_car_beats_bahn_rule_and_nah_rule():
 
 
 def test_override_target_exact_without_reserve_rounding_and_no_unclear_cap():
-    e = ev("a", "Termin Auto Bahn", datetime(2026, 10, 13, 8, 0, tzinfo=UTC))      # unklar
+    e = ev("a", "Termin Auto Bahn", datetime(2026, 10, 13, 8, 0, tzinfo=UTC))      # unclear
     r = run_ov([e], {"a": Route(100, 90)}, {override_key(e): Override(None, 95)})
     assert r.desired.soc == 95 and r.desired.capped_from is None
-    assert r.items[0].target_alone is not None and r.items[0].target_alone != 95    # berechneter Wert bleibt sichtbar
+    assert r.items[0].target_alone is not None and r.items[0].target_alone != 95    # computed value stays visible
 
 
 def test_event_without_location_and_target_is_planned_with_assumed_drive():
@@ -276,7 +276,7 @@ def test_override_key_separates_recurring_instances():
 
 def test_chain_respects_fixed_target_of_later_event():
     a = ev("a", "Uni", datetime(2026, 10, 13, 8, 0, tzinfo=UTC), hours=1)
-    b = ev("b", "Uni", datetime(2026, 10, 13, 11, 40, tzinfo=UTC), hours=1)         # kaum Ladezeit dazwischen
+    b = ev("b", "Uni", datetime(2026, 10, 13, 11, 40, tzinfo=UTC), hours=1)         # hardly any charging time in between
     r = run_ov([a, b], {"a": Route(45, 50), "b": Route(45, 50)}, {override_key(b): Override(None, 100)})
     assert r.items[1].target_chain == 100
     assert r.items[0].target_chain > r.items[0].target_alone
