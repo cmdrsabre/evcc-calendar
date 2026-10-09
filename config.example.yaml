@@ -1,0 +1,58 @@
+# Beispielkonfiguration. Kopieren nach /data/config.yaml (im Container) und anpassen.
+# Geheimnisse stehen NICHT hier, sondern in Umgebungsvariablen (Namen unten).
+
+home:
+  lat: 0.0              # 0/0 = unbekannt, dann wird `address` einmal geocodiert
+  lon: 0.0
+  address: "Wacholderweg 4, 14974 Ludwigsfelde"
+
+ha:
+  url: http://192.168.178.88:8123
+  token_env: HA_TOKEN                 # Long-Lived Access Token
+  calendar: calendar.a_a              # Anzeigename "A&a"
+  notify_targets:                     # notify.send_message mit diesen Ziel-Entitaeten
+    info:    [notify.iduke_nukem_plus]                                  # Bestaetigungen
+    warning: [notify.iduke_nukem_plus, notify.home_assistant_telegram_bot_hugh_hefner]
+    error:   [notify.iduke_nukem_plus, notify.home_assistant_telegram_bot_hugh_hefner,
+              notify.hobbyraum_echo_dot_durchsagen]                      # Alexa-Durchsage nur bei Fehlern
+  weather: weather.forecast_home      # Ersatz-Temperaturquelle
+
+evcc:
+  url: http://192.168.178.10:7070
+  api_key_env: EVCC_API_KEY
+  vehicle: "db:1"                     # Name aus /api/state (leer = einziges Fahrzeug)
+
+ors:
+  key_env: ORS_KEY
+  min_confidence: 0.7                 # darunter gilt die Adresse als unklar
+
+consumption:
+  warm: 20                            # kWh/100 km ab temp_threshold_c
+  cold: 23
+  temp_threshold_c: 10
+
+reserve_soc: 10                       # Prozentpunkte Reserve bei der Rueckkehr
+manual_drive_min: 45                  # Fahrzeit-Annahme für Termine ohne Adresse (Ziel wählst du in der Oberfläche)
+min_car_km: 4                        # einfache Strecke darunter: kein Auto-Termin (außer Stichwort Auto)
+unclear_cap_soc: 80                   # Deckel bei unklarer Einstufung
+time_buffer_min: 30                   # Puffer vor der Abfahrt
+charge_power_kw: 11
+charge_loss_margin: 0.15              # Verlustreserve beim Nachladen zwischen Terminen
+chain_window_h: 5
+horizon_days: 6                       # evcc-Oberflaeche erlaubt max. 6 Tage voraus
+run_every_min: 30
+vehicle_limit_min: 100                # Warnung, wenn das Limit im Auto darunter liegt
+
+# Regeln: ganze Woerter im Titel, Gross-/Kleinschreibung egal, * nur innerhalb des Wortes.
+rules:
+  - {match: "fritz*", mode: bahn}
+  - {match: "uni*", mode: auto}
+
+retries: 3                            # Versuche pro Dienst und Lauf (evcc, Kalender)
+retry_delay_s: 5                      # Pause vor Versuch 2, danach dreifach
+
+dry_run: true                         # erst auf false setzen, wenn der Dry-Run passt
+web: {host: 0.0.0.0, port: 80}      # Port im Container; nach aussen siehe HOST_PORT in .env
+db_path: /data/state.db
+# personal_dir: /data/personal          # eigene Bilder, Standard: Ordner "personal" neben der Datenbank
+timezone: Europe/Berlin

@@ -1,0 +1,49 @@
+"""Einstufung Auto/Bahn aus Titel, Beschreibung und Regelliste."""
+from __future__ import annotations
+
+import fnmatch
+import re
+from dataclasses import dataclass
+
+from .models import Classification, Mode
+
+_WORD = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def words(text: str) -> list:
+    """Kleingeschriebene ganze Woerter ohne Satzzeichen."""
+    return [w.lower() for w in _WORD.findall(text or "")]
+
+
+@dataclass(frozen=True)
+class Rule:
+    match: str
+    mode: Mode
+
+
+def _rule_hits(pattern: str, title_words: list) -> bool:
+    # Muster in Woerter zerlegen, '*' bleibt als Wildcard erhalten.
+    parts = [p for p in re.split(r"\s+", pattern.strip().lower()) if p]
+    if not parts:
+        return False
+    n = len(parts)
+    for i in range(len(title_words) - n + 1):
+        if all(fnmatch.fnmatchcase(title_words[i + j], parts[j]) for j in range(n)):
+            return True
+    return False
+
+
+def classify(title: str, description: str, rules: list) -> Classification:
+    kw = set(words(title)) | set(words(description))
+    has_auto, has_bahn = "auto" in kw, "bahn" in kw
+    if has_auto and has_bahn:
+        return Classification(Mode.AUTO, True, "Auto und Bahn im Text")
+    if has_auto:
+        return Classification(Mode.AUTO, False, "Stichwort Auto", True)
+    if has_bahn:
+        return Classification(Mode.BAHN, False, "Stichwort Bahn", True)
+    tw = words(title)
+    for r in rules:
+        if _rule_hits(r.match, tw):
+            return Classification(r.mode, False, "Regel %s" % r.match)
+    return Classification(Mode.AUTO, False, "Standard: Auto")

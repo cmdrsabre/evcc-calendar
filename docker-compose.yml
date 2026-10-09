@@ -1,0 +1,15 @@
+services:
+  evcc-kalender:
+    build: .
+    container_name: evcc-kalender
+    restart: unless-stopped
+    env_file: .env                         # HA_TOKEN, EVCC_API_KEY, ORS_KEY
+    user: "${PUID:-1000}:${PGID:-1000}"    # Unraid: 99:100 (nobody:users)
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0   # erlaubt Port 80 ohne Root im Container
+    environment:
+      TZ: Europe/Berlin
+    volumes:
+      - "${DATA_DIR:-/mnt/user/appdata/evcc-kalender}:/data"   # config.yaml und state.db
+    ports:
+      - "${HOST_PORT:-8180}:80"
