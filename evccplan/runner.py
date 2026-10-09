@@ -276,6 +276,9 @@ class Runner:
         if not last_set:
             return
         t = planner._parse(last_set["time"])
+        soc = lp.get("vehicleSoc")
+        if isinstance(soc, (int, float)) and soc >= last_set["soc"]:
+            return                          # battery is already at or above the target: evcc has nothing to charge, not a fault
         if t and eid == 0 and t - now < timedelta(days=2):
             notices.append(Notice("noteffective:%s" % last_set["time"],
                                   "Der gesetzte Plan (%s %% bis %s) ist in evcc nicht wirksam." % (
