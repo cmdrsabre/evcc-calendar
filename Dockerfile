@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM public.ecr.aws/docker/library/python:3.12-slim
 LABEL org.opencontainers.image.source="https://github.com/cmdrsabre/evcc-calendar" \
       org.opencontainers.image.description="Sets evcc charging plans from calendar appointments" \
       org.opencontainers.image.licenses="MIT"

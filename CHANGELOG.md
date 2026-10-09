@@ -7,6 +7,7 @@
 - Saving settings triggers a run in the configured mode.
 - Languages: English (default) and German for the UI, push messages and API errors, chosen with `language` in `config.yaml` or in the settings tab. Texts live in `evccplan/static/locales/<lang>.json`. **Existing installations that rely on German must set `language: de`.** Logs are English only.
 - The keywords "car" and "train" work like "Auto" and "Bahn".
+- Docker build uses the Python base image from the Amazon ECR Public mirror (`public.ecr.aws/docker/library/python`) to avoid Docker Hub rate limits in CI. Release workflow publishes only on version tags; pre-releases never get `latest`.
 
 ## 0.2.4
 - Fix: no more warning "plan is not effective in evcc" when the battery is already at or above the plan target. evcc does not report such a plan as effective until the battery drops below the target, which is expected.
