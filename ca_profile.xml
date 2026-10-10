@@ -1,6 +1,0 @@
-<?xml version="1.0"?>
-<CommunityApplications>
-  <Profile>evcc-calendar sets one-time evcc charging plans for your electric car from calendar appointments read through Home Assistant. Open source (MIT), source and issue tracker on GitHub.</Profile>
-  <Icon>https://raw.githubusercontent.com/cmdrsabre/evcc-calendar/main/templates/icon.png</Icon>
-  <WebPage>https://github.com/cmdrsabre/evcc-calendar</WebPage>
-</CommunityApplications>
