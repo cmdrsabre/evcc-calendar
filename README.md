@@ -94,8 +94,14 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 |---|---|---|
 | 0.1 | Read calendar, set plan in evcc, dry run, push via Home Assistant, simple status page | done |
 | 0.2 | Login, per-appointment overrides (car / no car / charge target), new UI, images, Docker image on ghcr.io | done |
-| 0.3 | More functions in the UI: edit rules and consumption values, history (done in 0.3.0); live run button, Bluelink consumption, filter for wrongly entered appointments (planned); 0.3.1: link to the GitHub page next to the version number in the UI (planned) | current |
-| 0.4 | Google OAuth login, Home Assistant optional (calendar directly via Google, other notification channels) | planned |
+| 0.3 | More functions in the UI: edit rules and consumption values, history (done in 0.3.0); live run button, Bluelink consumption, filter for wrongly entered appointments (planned) | current |
+| 0.4 | Live status in the UI (connected, charging, power, SoC, charged energy; optional PV / grid values from evcc) with a configurable polling interval, link to the GitHub page next to the version number | planned |
+
+### Future ideas
+Not scheduled for any version yet:
+- Google OAuth login
+- Home Assistant optional (calendar directly via Google, other notification channels)
+- MQTT: react to evcc topics instead of polling
 
 ## License
 [MIT](LICENSE). Third-party components and notices: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
