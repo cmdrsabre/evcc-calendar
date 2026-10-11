@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+- Live status on the vehicle card: plugged in, charging, charge power, SoC and charged energy from evcc. Optional PV generation, grid import / feed-in and home consumption when evcc reports them. Missing values are hidden, an unreachable evcc is shown as such.
+- A background thread polls only evcc `GET /api/state` (new setting `live_poll_s`, default 10 s, 5 to 300, editable in the UI). It never starts a planning run and does no geocoding or routing. The new endpoint `GET /api/live` (login required) serves the cached value only.
+- Planning runs stay serialized by the runner lock for every trigger (timer, UI change, "Jetzt prüfen"); covered by a test.
+- Link to the GitHub page next to the version number.
+- README: roadmap updated, "Future ideas" extended.
+
 ## 0.3.0
 - New tab "Einstellungen": consumption values, reserve, cap for unclear classification, charge power, trip limits and the car/train rules can be edited in the UI. Values overlay `config.yaml`, are stored in the database and can be reset. Connection data and secrets stay in `config.yaml`.
 - New tab "Verlauf": the last 300 runs (including "Jetzt prüfen") with the result of each run.
