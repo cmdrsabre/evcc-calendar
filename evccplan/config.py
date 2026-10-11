@@ -8,6 +8,7 @@ import yaml
 
 from . import i18n
 from .classify import Rule
+from .live import DEFAULT_INTERVAL_S, clamp_interval
 from .models import Mode
 
 
@@ -40,6 +41,7 @@ class Config:
     horizon_days: int = 6
     run_every_min: int = 30
     vehicle_limit_min: int = 100
+    live_poll_s: int = DEFAULT_INTERVAL_S   # live status poll against evcc (seconds, 5 to 300)
     rules: list = field(default_factory=list)
     dry_run: bool = True
     web_host: str = "0.0.0.0"
@@ -97,6 +99,8 @@ def from_dict(d: dict, env=_env) -> Config:
     for key in ("unclear_cap_soc", "horizon_days", "run_every_min", "vehicle_limit_min", "retries"):
         if key in d:
             setattr(c, key, int(d[key]))
+    if "live_poll_s" in d:
+        c.live_poll_s = clamp_interval(d["live_poll_s"])
     c.rules = [Rule(str(r["match"]), Mode(str(r["mode"]).lower())) for r in (d.get("rules") or [])]
     if "dry_run" in d:
         c.dry_run = bool(d["dry_run"])

@@ -42,6 +42,7 @@ chain_window_h: 5
 horizon_days: 6                       # evcc UI allows at most 6 days ahead
 run_every_min: 30
 vehicle_limit_min: 100                # warn if the limit set in the car is below this
+live_poll_s: 10                       # live status: how often the UI status reads evcc /api/state (5 to 300 s, no planning run)
 
 # Rules: whole words in the title, case-insensitive, * only within a word.
 rules:

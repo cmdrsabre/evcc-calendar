@@ -12,6 +12,7 @@ import time
 
 from . import config as cfgmod
 from .clients import EvccClient, HAClient, OrsClient
+from .live import LivePoller
 from .runner import Runner
 from .store import Store
 from .web import make_server
@@ -52,7 +53,9 @@ def main(argv=None) -> int:
         print(json.dumps(runner.run(force_dry=args.dry_run), ensure_ascii=False, indent=2))
         return 0
     logging.info("Start, mode: %s", "dry run" if cfg.dry_run else "live")
-    threading.Thread(target=make_server(runner, cfg).serve_forever, daemon=True).start()
+    live = LivePoller(runner.evcc, cfg)
+    live.start()
+    threading.Thread(target=make_server(runner, cfg, live).serve_forever, daemon=True).start()
     while True:
         runner.run()
         time.sleep(cfg.run_every_min * 60)

@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from . import __version__, i18n
 from .auth import MIN_LENGTH, SESSION_DAYS, Auth
+from .live import LivePoller
 
 log = logging.getLogger("evccplan")
 STATIC = Path(__file__).resolve().parent / "static"
@@ -69,8 +70,9 @@ def _bad_target(value) -> bool:
     return value is not None and (isinstance(value, bool) or not isinstance(value, int) or value not in TARGETS)
 
 
-def make_server(runner, cfg) -> ThreadingHTTPServer:
+def make_server(runner, cfg, live: LivePoller = None) -> ThreadingHTTPServer:
     auth = Auth(runner.store)
+    live = live or LivePoller(runner.evcc, cfg)       # not started here: the caller decides whether it polls
     runs = RunRequester(runner)
 
     class H(BaseHTTPRequestHandler):
@@ -163,6 +165,10 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
                             "timezone": cfg.timezone, "reserve_soc": cfg.reserve_soc, "targets": TARGETS,
                             "manual_drive_min": cfg.manual_drive_min, "language": cfg.language, "version": __version__, "now": datetime.now(timezone.utc).isoformat()})
                 return self._json(200, res)
+            if path == "/api/live":                       # cached value only, never a request to evcc
+                if not self._authed():
+                    return self._json(401, {"error": self.T("api.login_required")})
+                return self._json(200, live.snapshot())
             if path == "/api/settings":
                 if not self._authed():
                     return self._json(401, {"error": self.T("api.login_required")})
@@ -276,5 +282,5 @@ def make_server(runner, cfg) -> ThreadingHTTPServer:
             pass
 
     srv = ThreadingHTTPServer((cfg.web_host, cfg.web_port), H)
-    srv.auth, srv.runs = auth, runs
+    srv.auth, srv.runs, srv.live = auth, runs, live
     return srv
