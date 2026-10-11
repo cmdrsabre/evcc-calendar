@@ -1,0 +1,12 @@
+{
+  "pvPower": 4210,
+  "homePower": 830,
+  "grid": {"power": -2550, "energy": 1234.5, "powers": [-850, -850, -850], "currents": [-3.7, -3.7, -3.7]},
+  "battery": null,
+  "gridConfigured": true,
+  "loadpoints": [
+    {"vehicleName": "db:1", "connected": true, "charging": true, "chargePower": 6420, "chargedEnergy": 12345,
+     "vehicleSoc": 63.4, "vehicleLimitSoc": 100, "mode": "pv"}
+  ],
+  "vehicles": {"db:1": {"title": "Ioniq 5", "capacity": 54, "minSoc": 30}}
+}

@@ -80,6 +80,7 @@ class Server:
     def __init__(self, state, calendar):
         self.state, self.calendar = state, calendar
         self.calls, self.notified, self.targets, self.fail_calendar = [], [], [], False
+        self.gets = []                                   # paths of all GET requests (to check what is read)
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -97,6 +98,7 @@ class Server:
                 if not self._auth():
                     return self._reply(401)
                 u = urllib.parse.urlsplit(self.path)
+                outer.gets.append(u.path)
                 if u.path == "/api/state":
                     return self._reply(200, {"result": outer.state})
                 if u.path.startswith("/api/calendars/"):

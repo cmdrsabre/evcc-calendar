@@ -10,6 +10,7 @@ from typing import Optional
 from . import i18n
 from .i18n import t
 from .classify import Rule
+from .live import MAX_INTERVAL_S, MIN_INTERVAL_S
 from .models import Mode
 
 # name -> (type, minimum, maximum)
@@ -19,7 +20,7 @@ FIELDS = {
     "min_car_km": (float, 0, 50), "manual_drive_min": (float, 5, 600),
     "time_buffer_min": (float, 0, 240), "chain_window_h": (float, 0, 48),
     "charge_power_kw": (float, 1, 50), "charge_loss_margin": (float, 0, 1),
-    "vehicle_limit_min": (int, 0, 100),
+    "vehicle_limit_min": (int, 0, 100), "live_poll_s": (int, MIN_INTERVAL_S, MAX_INTERVAL_S),
 }
 MAX_RULES = 50
 _PATTERN = re.compile(r"^[\w*\- ]{1,40}$", re.UNICODE)

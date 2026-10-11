@@ -1,0 +1,9 @@
+{
+  "gridConfigured": false,
+  "battery": null,
+  "loadpoints": [
+    {"vehicleName": "db:1", "connected": true, "charging": false, "chargePower": 0, "chargedEnergy": 0,
+     "vehicleSoc": 67, "mode": "smart"}
+  ],
+  "vehicles": {"db:1": {"title": "Ioniq 5", "capacity": 54, "minSoc": 30}}
+}

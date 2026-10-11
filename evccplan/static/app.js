@@ -6,7 +6,7 @@
   const SVGNS = 'http://www.w3.org/2000/svg';
   const CAR_SVG = '<svg viewBox="0 0 320 120" aria-hidden="true"><path d="M14 86c0-9 4-15 12-18l34-10c10-14 22-24 40-30 20-6 52-6 76-2 28 5 44 18 60 34l44 8c14 3 26 8 32 16 5 7 4 12 4 16H14z"/><path class="glass" d="M82 56c8-9 16-16 30-19 20-4 40-3 56 0v21H82zM178 38c14 3 26 10 38 20h-38z"/><circle class="tyre" cx="84" cy="100" r="17"/><circle class="tyre" cx="244" cy="100" r="17"/><circle class="rim" cx="84" cy="100" r="7"/><circle class="rim" cx="244" cy="100" r="7"/></svg>';
 
-  const S = { tab: 'plan', settings: null, status: null, pending: {}, cards: new Map(), sig: '', tz: 'Europe/Berlin', timer: null, fmt: null, targets: [], lang: null, dict: {}, fallback: {}, languages: [] };
+  const S = { tab: 'plan', settings: null, status: null, pending: {}, cards: new Map(), sig: '', tz: 'Europe/Berlin', timer: null, liveTimer: null, fmt: null, targets: [], lang: null, dict: {}, fallback: {}, languages: [] };
 
   // ------------------------------------------------------------ Helpers
   function icon(name) {
@@ -61,6 +61,7 @@
     S.inputs = null;
     if (S.fmt) S.fmt = makeFormatters(S.tz);
     if (S.status) render(S.status);
+    if (S.liveData) renderLive(S.liveData);
     if (!$('view-main').hidden) {
       if (S.tab === 'history') loadHistory();
       if (S.tab === 'settings') loadSettings();
@@ -137,6 +138,9 @@
   // ------------------------------------------------------------ Login
   function showAuth(setupNeeded, minPw) {
     clearTimeout(S.timer);
+    clearTimeout(S.liveTimer);
+    S.liveData = null;
+    $('live').hidden = true;
     $('view-main').hidden = true;
     $('view-auth').hidden = false;
     $('progress').hidden = true;
@@ -185,6 +189,7 @@
     $('view-main').hidden = false;
     art($('car-art'), 'api/personal/car', 'img/car.webp');   // custom image (logged in only) before the default image
     refresh();
+    pollLive();
   }
 
   async function refresh() {
@@ -298,6 +303,50 @@
     const ul = $('notices-list');
     ul.replaceChildren();
     list.forEach((n) => ul.append(el('li', null, n.text + ' ', el('small', null, '(' + n.status + ')'))));
+  }
+
+  // ------------------------------------------------------------ Live status
+  // Reads the value cached by the server (/api/live); the server polls evcc, never the browser, and a poll never starts a run.
+  async function pollLive() {
+    clearTimeout(S.liveTimer);
+    const r = await api('GET', '/api/live');
+    if (r.status === 401) return boot();
+    if (r.ok) renderLive(r.data);
+    const every = Math.max(5, Number(r.ok && r.data.interval_s) || 10) * 1000;
+    S.liveTimer = setTimeout(pollLive, document.hidden ? 60000 : every);
+  }
+
+  function renderLive(live) {
+    S.liveData = live;
+    const box = $('live');
+    box.hidden = false;
+    const facts = $('live-facts'), list = $('live-list'), note = $('live-note');
+    facts.replaceChildren(); list.replaceChildren();
+    note.className = 'live-note';
+    box.classList.toggle('is-down', live.reachable === false);
+    if (live.reachable == null) { note.textContent = t('ui.live.loading'); return; }
+    if (live.reachable === false) {
+      note.className = 'live-note is-error';
+      note.textContent = t('ui.live.unreachable') + (live.ok_time && S.fmt ? ' · ' + t('ui.live.unreachable_since', { time: S.fmt.short.format(d(live.ok_time)) }) : '');
+      return;
+    }
+    const lp = live.loadpoint || {}, site = live.site || {};
+    const chip = (ic, txt, cls) => facts.append(el('li', 'chip' + (cls ? ' ' + cls : ''), ic ? icon(ic) : null, txt));
+    if (typeof lp.connected === 'boolean') chip('plug', t(lp.connected ? 'ui.fact.connected' : 'ui.fact.disconnected'));
+    if (typeof lp.charging === 'boolean') chip('bolt', t(lp.charging ? 'ui.live.charging' : 'ui.live.not_charging'), lp.charging ? 'charging' : '');
+    let rows = 0;
+    const row = (label, value, unit, cls) => { rows++; list.append(el('div', 'live-row' + (cls ? ' ' + cls : ''), el('dt', null, label), el('dd', null, num(value) + ' ' + unit))); };
+    if (typeof lp.power_kw === 'number') row(t('ui.live.power'), lp.power_kw, t('ui.unit.kw'));
+    if (typeof lp.soc === 'number') row(t('ui.live.soc'), lp.soc, t('ui.unit.pct'));
+    if (typeof lp.energy_kwh === 'number') row(t('ui.live.energy'), lp.energy_kwh, t('ui.unit.kwh'));
+    let first = true;
+    const siteRow = (label, value, unit) => { row(label, value, unit, first ? 'site-first' : ''); first = false; };
+    if (typeof site.pv_kw === 'number') siteRow(t('ui.live.pv'), site.pv_kw, t('ui.unit.kw'));
+    if (typeof site.grid_kw === 'number') siteRow(t(site.grid_kw < 0 ? 'ui.live.grid_export' : 'ui.live.grid_import'), Math.abs(site.grid_kw), t('ui.unit.kw'));
+    if (typeof site.home_kw === 'number') siteRow(t('ui.live.home'), site.home_kw, t('ui.unit.kw'));
+    if (!rows && !facts.children.length) note.textContent = t('ui.live.no_data');
+    else if (live.time && S.fmt) note.textContent = t('ui.live.updated', { time: S.fmt.time.format(d(live.time)) });
+    else note.textContent = '';
   }
 
   // ------------------------------------------------------------ Events
@@ -523,6 +572,7 @@
     ['consumption', [['warm', 'kwh100'], ['cold', 'kwh100'], ['temp_threshold_c', 'c']]],
     ['charging', [['reserve_soc', 'pct'], ['unclear_cap_soc', 'pct'], ['charge_power_kw', 'kw'], ['charge_loss_margin', ''], ['vehicle_limit_min', 'pct']]],
     ['trips', [['min_car_km', 'km'], ['manual_drive_min', 'min'], ['time_buffer_min', 'min'], ['chain_window_h', 'h']]],
+    ['live', [['live_poll_s', 's']]],
   ];
 
   // Language name in its own language (fallback: the code).
@@ -661,7 +711,7 @@
     if (!r.ok) toast(r.data.error || t('ui.err.run_start'), true);
     refresh();
   });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('view-main').hidden) refresh(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('view-main').hidden) { refresh(); pollLive(); } });
 
   boot();
 })();

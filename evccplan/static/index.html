@@ -91,6 +91,12 @@
       </div>
       <ul class="facts" id="v-facts"></ul>
       <div class="plan-box" id="plan-box"></div>
+      <section class="live-box" id="live" data-i18n-aria-label="ui.live.title" hidden>
+        <h3 data-i18n="ui.live.title"></h3>
+        <ul class="facts" id="live-facts"></ul>
+        <dl class="live-list" id="live-list"></dl>
+        <p class="live-note" id="live-note"></p>
+      </section>
     </aside>
 
     <section class="timeline" data-i18n-aria-label="ui.timeline.aria">
@@ -129,7 +135,10 @@
     </form>
   </section>
 
-  <footer class="foot"><span id="version"></span></footer>
+  <footer class="foot">
+    <span id="version"></span>
+    <a id="gh-link" href="https://github.com/cmdrsabre/evcc-calendar" target="_blank" rel="noopener noreferrer" data-i18n="ui.github" data-i18n-title="ui.github_title"></a>
+  </footer>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

@@ -258,3 +258,17 @@ button, select, input { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Live status (evcc /api/state, cached on the server) */
+.live-box { border-top: 1px solid var(--line); padding-top: .9rem; display: grid; gap: .6rem; }
+.live-box h3 { margin: 0; font-size: 1rem; }
+.live-list { margin: 0; display: grid; gap: .35rem; }
+.live-row { display: flex; justify-content: space-between; gap: 1rem; font-size: .95rem; }
+.live-row dt { color: var(--muted); }
+.live-row dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.live-row.site-first { border-top: 1px dashed var(--line); padding-top: .35rem; }
+.live-note { margin: 0; color: var(--muted); font-size: .85rem; }
+.live-box.is-down .live-note.is-error { color: var(--bad); font-weight: 600; }
+.chip.charging { background: color-mix(in srgb, var(--ok) 16%, var(--card)); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.foot { display: flex; gap: 1rem; flex-wrap: wrap; }
+.foot a { color: var(--muted); }
