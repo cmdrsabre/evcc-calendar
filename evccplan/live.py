@@ -11,6 +11,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
+from . import chargeview
 from .clients import ApiError
 
 log = logging.getLogger("evccplan")
@@ -84,6 +85,7 @@ class LivePoller:
         self.evcc, self.cfg, self.now_fn = evcc, cfg, now_fn
         self._lock = threading.Lock()
         self._snap: dict = {"reachable": None, "time": None, "ok_time": None, "loadpoint": {}, "site": {}}
+        self._raw: dict = {}                                       # values for the charge view, from the last good poll
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -91,16 +93,30 @@ class LivePoller:
     def interval_s(self) -> int:
         return clamp_interval(getattr(self.cfg, "live_poll_s", DEFAULT_INTERVAL_S))
 
+    def next_wait_s(self, fails: int) -> float:
+        """Interval after the last poll; doubles with every failure (up to 5 min) so a struggling evcc is left alone."""
+        return min(MAX_INTERVAL_S, self.interval_s * 2 ** min(fails, 6))
+
     def snapshot(self) -> dict:
         """The cached result of the last poll (no request to evcc)."""
         with self._lock:
-            return {**self._snap, "loadpoint": dict(self._snap["loadpoint"]), "site": dict(self._snap["site"]),
+            snap = {**self._snap, "loadpoint": dict(self._snap["loadpoint"]), "site": dict(self._snap["site"]),
                     "interval_s": self.interval_s}
+            raw = self._raw
+        snap["charge"] = None
+        if snap["reachable"] and raw:
+            try:
+                snap["charge"] = chargeview.build(raw, self.cfg, self.now_fn())
+            except Exception:                                      # the view must never break the live status
+                log.exception("Charge view failed")
+        return snap
 
     def poll_once(self) -> None:
         now = _iso(self.now_fn())
         try:
-            parsed = parse_state(self.evcc.state(), self.cfg.evcc_vehicle)
+            state = self.evcc.state()
+            parsed = parse_state(state, self.cfg.evcc_vehicle)
+            raw = self._extract(state)
             new = {"reachable": True, "time": now, "ok_time": now, **parsed}
         except ApiError as exc:
             new = self._failed(now, str(exc))
@@ -111,9 +127,19 @@ class LivePoller:
             was = self._snap["reachable"]
             if new["reachable"] is False:
                 new["ok_time"] = self._snap["ok_time"]
+            else:
+                self._raw = raw
             self._snap = new
         if new["reachable"] and was is False:
             log.info("Live status: evcc is reachable again")
+
+    def _extract(self, state) -> dict:
+        try:
+            lp = _loadpoint(state, self.cfg.evcc_vehicle) if isinstance(state, dict) else {}
+            return chargeview.extract(state, self.cfg.evcc_vehicle, self.now_fn(), lp)
+        except Exception:                                          # a odd state must not mark evcc as unreachable
+            log.exception("Charge view: state not readable")
+            return {}
 
     def _failed(self, now: str, detail: str) -> dict:
         with self._lock:
@@ -133,7 +159,9 @@ class LivePoller:
         self._stop.set()
 
     def _loop(self) -> None:
+        fails = 0
         while True:
             self.poll_once()
-            if self._stop.wait(self.interval_s):
+            fails = fails + 1 if self._snap["reachable"] is False else 0
+            if self._stop.wait(self.next_wait_s(fails)):
                 return

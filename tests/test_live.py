@@ -226,3 +226,25 @@ def test_live_poll_interval_is_editable_in_settings(web):
     assert code == 200 and data["values"]["live_poll_s"] == 30
     assert c.call("GET", "/api/live")[1]["interval_s"] == 30
     assert c.call("POST", "/api/settings", {"values": {"live_poll_s": 3}})[0] == 400
+
+
+def test_poller_snapshot_carries_the_charge_view():
+    from datetime import datetime, timedelta, timezone
+    now = datetime(2026, 10, 14, 22, 0, tzinfo=timezone.utc)
+    st = {"vehicles": {"db:1": {"capacity": 54, "plan": {"soc": 85, "time": (now + timedelta(hours=9)).strftime("%Y-%m-%dT%H:%M:%SZ")}}},
+          "loadpoints": [{"vehicleName": "db:1", "connected": False}], "tariffGrid": 0.3, "currency": "EUR"}
+    cfg = Config(evcc_vehicle="db:1")
+    poller = LivePoller(FakeEvcc(st), cfg, lambda: now)
+    assert poller.snapshot()["charge"] is None                          # nothing polled yet
+    poller.poll_once()
+    c = poller.snapshot()["charge"]
+    assert c["state"] == "away" and c["cost"]["max"] == 14.29
+    st["vehicles"]["db:1"]["capacity"] = "odd"                           # unreadable data: the view goes, the status stays
+    poller.poll_once()
+    snap = poller.snapshot()
+    assert snap["reachable"] is True and snap["charge"] is None
+
+
+def test_poller_backs_off_while_evcc_fails():
+    poller = LivePoller(FakeEvcc(), Config(live_poll_s=10), lambda: __import__("datetime").datetime.now(__import__("datetime").timezone.utc))
+    assert [poller.next_wait_s(n) for n in (0, 1, 2, 3, 6, 40)] == [10, 20, 40, 80, 300, 300]

@@ -102,6 +102,13 @@ class EvccClient:
         _, data = _request("GET", self.url + "/api/state", self.headers, timeout=self.timeout)
         return (data or {}).get("result", data or {})
 
+    def sessions(self, year: int, month: int) -> list:
+        """Charging sessions of one month (read only; evcc must have its database enabled)."""
+        _, data = _request("GET", "%s/api/sessions?year=%d&month=%d" % (self.url, year, month), self.headers,
+                           timeout=self.timeout)
+        data = (data or {}).get("result", data) if isinstance(data, dict) else data
+        return data if isinstance(data, list) else []
+
     @staticmethod
     def _vq(name: str) -> str:
         return urllib.parse.quote(name, safe="")
