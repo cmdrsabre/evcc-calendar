@@ -594,9 +594,9 @@
         const free = T - need;
         short = free < 0;
         if (short) need = T;
-        seg('reserve', Math.max(0, T - need));
+        seg('out', need / 2);                       // left to right in the order the energy is used up: there, back, reserve
         seg('back', need / 2);
-        seg('out', need / 2);
+        seg('reserve', Math.max(0, T - need));
         const li = (cls, label, v) => { const s = el('span', cls, el('i'), label + ' '); s.append(el('b', null, num(v) + ' %')); c.legend.append(s); };
         li('l-out', t('ui.card.leg_out'), it.need_soc / 2);
         li('l-back', t('ui.card.leg_back'), it.need_soc / 2);
