@@ -164,3 +164,35 @@ def test_pv_never_covers_more_than_the_charge_and_no_forecast_means_no_pv():
 def test_solar_scale_only_reduces():
     assert cv._solar(solar_state({}, scale=1.4))[1] == 1.0
     assert cv._solar(solar_state({}, scale=0.7))[1] == 0.7
+
+
+def test_pv_share_includes_what_was_already_charged():
+    now = NOW + timedelta(hours=3)
+    lp = {"connected": True, "charging": True, "vehicleSoc": 70, "chargedEnergy": 5900, "chargeDuration": 3600 * 10**9,
+          "planProjectedStart": iso(now - timedelta(minutes=5)), "planProjectedEnd": iso(now + timedelta(hours=1))}
+    st = solar_state(lp, hours_from_now=(0, 12))                          # 8 kW PV all day
+    c = cv.build(cv.extract(st, "db:1", now, st["loadpoints"][0]), Config(), now)["cost"]
+    # past hour: min(11, 7.5) kW * 1 h = 7.5 kWh, capped at the 5.9 kWh really charged; ahead: 1 h * 7.5 kW
+    assert abs(c["pv_kwh"] - 13.4) < 0.2                                  # 5.9 + 7.5, below the 15.4 kWh of the whole charge
+    assert c["est"] < c["max"]
+
+
+def test_forecast_of_passed_slots_is_remembered():
+    hist = {}
+    ts = lambda h: int((NOW + timedelta(hours=h)).timestamp())
+    first = {"forecast": {"solar": {"timeseries": [[ts(h), 6000] for h in range(0, 6)]}}}
+    cv.remember_solar(hist, cv._solar(first)[0], NOW)
+    later = NOW + timedelta(hours=3)                                      # evcc dropped the slots before 'later'
+    second = {"forecast": {"solar": {"timeseries": [[ts(h), 1000] for h in range(3, 6)]}}}
+    merged = dict(cv.remember_solar(hist, cv._solar(second)[0], later))
+    assert merged[NOW + timedelta(hours=1)] == 6.0                        # what it said while the slot was still ahead
+    assert merged[NOW + timedelta(hours=4)] == 1.0                        # newest value for what is still ahead
+
+
+def test_pv_share_is_valued_at_the_feedin_tariff_like_evcc():
+    noon = NOW + timedelta(hours=2)
+    lp = {"connected": True, "vehicleSoc": 60, "planProjectedStart": iso(noon), "planProjectedEnd": iso(noon + timedelta(hours=1))}
+    st = solar_state(lp, hours_from_now=(0, 12))
+    st["tariffFeedIn"] = 0.07
+    c = cv.build(cv.extract(st, "db:1", NOW, st["loadpoints"][0]), Config(), NOW)["cost"]
+    assert abs(c["est_free"] - 2.51) < 0.02 and abs(c["est"] - (2.51 + 7.5 * 0.07)) < 0.02 and c["feedin"] == 0.07

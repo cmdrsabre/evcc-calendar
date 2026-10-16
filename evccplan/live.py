@@ -85,6 +85,7 @@ class LivePoller:
         self.evcc, self.cfg, self.now_fn = evcc, cfg, now_fn
         self._lock = threading.Lock()
         self._snap: dict = {"reachable": None, "time": None, "ok_time": None, "loadpoint": {}, "site": {}}
+        self._solar_hist: dict = {}                                # forecast values of passed quarter hours (poll thread only)
         self._raw: dict = {}                                       # values for the charge view, from the last good poll
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -136,7 +137,7 @@ class LivePoller:
     def _extract(self, state) -> dict:
         try:
             lp = _loadpoint(state, self.cfg.evcc_vehicle) if isinstance(state, dict) else {}
-            return chargeview.extract(state, self.cfg.evcc_vehicle, self.now_fn(), lp)
+            return chargeview.extract(state, self.cfg.evcc_vehicle, self.now_fn(), lp, self._solar_hist)
         except Exception:                                          # a odd state must not mark evcc as unreachable
             log.exception("Charge view: state not readable")
             return {}
