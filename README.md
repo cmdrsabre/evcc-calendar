@@ -67,6 +67,13 @@ Each message is sent only once per occasion.
   and win over `config.yaml`; "Auf config.yaml zurücksetzen" removes them. URLs, tokens and keys are not editable in the UI.
 - The **Verlauf** tab lists the last 300 runs with their result. Deleting `state.db` also clears settings and history.
 
+### Next charge, cost and sessions (v0.5)
+- Each planned charge in the calendar shows **when charging is planned** (timeline bar with now and plan time), its duration and cost; the bar of the card marks the
+  actual state of charge and where the plan wants it, so a deviation is visible at once, plus whether charging is ahead of or behind the plan. While the car is plugged in the window comes from evcc, otherwise it is estimated from the plan time and `charge_power_kw`.
+- **Maximum cost** of the next charge: grid energy (with `charge_loss_margin`) times the price from evcc. PV share is not deducted, hence "maximum".
+  If evcc has no price, nothing is shown. If the car is not plugged in, the state of charge on arrival is assumed to be `reserve_soc`.
+- The history lists finished charging sessions with their real cost (needs evcc's session database, read only).
+
 ## Your own vehicle image
 The bundled blue car (`evccplan/static/img/car.webp`) is the default. Your own image overrides it without changing any project file:
 
@@ -96,7 +103,7 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 | 0.2 | Login, per-appointment overrides (car / no car / charge target), new UI, images, Docker image on ghcr.io | done |
 | 0.3 | More functions in the UI: edit rules and consumption values, history | done |
 | 0.4 | Live status in the UI (plugged in, charging, power, SoC, charged energy; optional PV / grid / home values from evcc) with a configurable polling interval, link to the GitHub page next to the version number | done |
-| 0.5 | Run history lists only runs with something to report (repeats are merged), shows the problem texts, is paged, and shows the time of the last run | current |
+| 0.5 | Run history only with news (paged, problem texts, last run time), next charge window and progress as a bar, maximum cost forecast with the evcc price, real cost of finished sessions, warning when a plan cannot be reached | current |
 
 ### Future ideas
 Not scheduled for any version yet:

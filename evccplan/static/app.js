@@ -84,6 +84,7 @@
     if (S.status) { $('version').textContent = S.status.version ? t('ui.version', { v: S.status.version }) : ''; }
   }
 
+  const kwhText = (v) => Number(v).toLocaleString(locale(), { maximumFractionDigits: 1 });
   const num = (v) => { const x = v < 10 ? v.toFixed(1) : String(Math.round(v)); return S.lang === 'de' ? x.replace('.', ',') : x; };
 
   async function api(method, path, body) {
@@ -318,6 +319,7 @@
 
   function renderLive(live) {
     S.liveData = live;
+    refreshChargePanels();
     const box = $('live');
     box.hidden = false;
     const facts = $('live-facts'), list = $('live-list'), note = $('live-note');
@@ -347,6 +349,101 @@
     if (!rows && !facts.children.length) note.textContent = t('ui.live.no_data');
     else if (live.time && S.fmt) note.textContent = t('ui.live.updated', { time: S.fmt.time.format(d(live.time)) });
     else note.textContent = '';
+  }
+
+
+  // ------------------------------------------------------------ Planned charge (window, progress, cost)
+  // All numbers come from the server: the live view (evcc state) for the charge that is next, an estimate for the other
+  // planned ones. This only draws them. A panel sits in the calendar card of the planned charge.
+  const minutesText = (m) => (m >= 60 ? t('ui.charge.hours_minutes', { h: Math.floor(m / 60), m: m % 60 }) : t('ui.charge.minutes', { m }));
+
+  function money(value, currency, digits) {
+    try {
+      return new Intl.NumberFormat(locale(), { style: 'currency', currency: currency || 'EUR', minimumFractionDigits: 2, maximumFractionDigits: digits || 2 }).format(value);
+    } catch (e) { return num(value) + ' ' + (currency || ''); }
+  }
+
+  function buildChargePanel(title) {
+    const p = {};
+    p.root = el('section', 'cp');
+    p.root.hidden = true;
+    p.root.setAttribute('aria-label', t('ui.charge.aria'));
+    p.facts = el('ul', 'facts');
+    p.window = el('p', 'cp-window');
+    p.window.hidden = !title;                       // in a calendar card the times are in its "charged" line
+    p.progress = el('p', 'cp-progress');
+    p.cost = el('p', 'cp-cost');
+    p.note = el('p', 'live-note');
+    p.root.append(...(title ? [el('h3', null, t('ui.charge.title'))] : []), p.facts, p.window, p.progress, p.cost, p.note);
+    return p;
+  }
+
+  function renderChargePanel(p, c) {
+    if (!c || !S.fmt) { p.root.hidden = true; return; }
+    p.root.hidden = false;
+    const f = S.fmt, w = c.window || {};
+    p.facts.replaceChildren(el('li', 'chip' + (c.state === 'charging' ? ' charging' : ''), t('ui.charge.state_' + c.state)));
+    if (w.hours > 0 && c.state !== 'done') p.facts.append(el('li', 'chip', t('ui.charge.duration', { h: num(w.hours) })));
+    p.window.textContent = c.state === 'done' ? t('ui.charge.target_at', { soc: c.target, time: f.time.format(d(c.deadline)) })
+      : t(w.estimated ? 'ui.charge.window_est' : 'ui.charge.window', { start: f.short.format(d(w.start)), end: f.time.format(d(w.end)) });
+
+    const g = c.progress;
+    p.progress.className = 'cp-progress' + (g ? ' is-' + g.kind : '');
+    p.progress.textContent = !g ? '' : g.kind === 'on' ? t('ui.charge.on') : t(g.kind === 'ahead' ? 'ui.charge.ahead' : 'ui.charge.behind', { m: minutesText(g.minutes) });
+    p.progress.hidden = !g;
+
+    const cost = c.cost;
+    p.cost.hidden = p.note.hidden = !cost;
+    if (!cost) return;
+    p.cost.textContent = t(cost.remaining ? 'ui.charge.cost_remaining' : 'ui.charge.cost', { cost: money(cost.max, cost.currency) });
+    const src = cost.source === 'forecast' ? ' (' + t('ui.charge.price_forecast') + ')' : '';
+    p.note.textContent = t('ui.charge.cost_detail', { kwh: kwhText(cost.kwh), price: money(cost.price, cost.currency, 3) }) + src
+      + (cost.estimated_start ? '. ' + t('ui.charge.cost_est', { soc: num(c.start_soc) }) : '');
+  }
+
+  // Actual ("Ist", current state of charge) and expected ("Soll", where the plan wants it right now) on the card's own bar,
+  // next to the target flag, so a deviation is visible at once.
+  function setMarkers(c, live) {
+    const mark = (node, label, v) => {
+      node.hidden = typeof v !== 'number';
+      if (node.hidden) return;
+      node.style.setProperty('--x', Math.min(100, Math.max(0, v)) + '%');
+      node.lastChild.textContent = t(label, { n: num(v) });
+    };
+    mark(c.ist, 'ui.charge.mark_ist', live ? live.soc : null);
+    mark(c.soll, 'ui.charge.mark_soll', live && live.progress ? live.progress.expected_soc : null);
+    c.bar.classList.toggle('has-marks', !c.ist.hidden || !c.soll.hidden);
+  }
+
+  // "Charged from - to (+n late)" instead of "charged by": start and end of the charging window, delay against the plan time.
+  function setReadyLine(c, it, view) {
+    if (!view || !view.window || !view.window.start || !it.ready_by) return;
+    const f = S.fmt, a = d(view.window.start), b = d(view.window.end);
+    const sameDay = f.dayKey.format(a) === f.dayKey.format(b);
+    const late = Math.round((b - d(it.ready_by)) / 60000);
+    c.ready.replaceChildren(icon('clock'), t('ui.card.charged_from_to', { start: f.short.format(a), end: (sameDay ? f.time : f.short).format(b) })
+      + (late >= 3 ? ' (' + t('ui.card.late', { m: minutesText(late) }) + ')' : ''));
+  }
+
+  // Live view for the first planned item (if it is the plan evcc charges for), estimates for the others. A live view
+  // that belongs to no card (e.g. a repeating plan in evcc) gets a panel of its own above the calendar.
+  function refreshChargePanels() {
+    if (!S.status || !S.fmt) return;
+    if (!S.standalone) { S.standalone = buildChargePanel(true); $('charge-slot').append(S.standalone.root); }
+    const list = items();
+    const live = S.liveData && S.liveData.reachable ? S.liveData.charge : null;
+    const first = list.find((i) => i.status === 'geplant');
+    let used = false;
+    for (const it of list) {
+      const c = S.cards.get(it.key);
+      if (!c) continue;
+      let view = it.charge_est || null;
+      if (live && it === first && it.ready_by && Math.abs(d(live.deadline) - d(it.ready_by)) < 120000) { view = live; used = true; }
+      renderChargePanel(c.cp, view);
+      setMarkers(c, view === live ? live : null);
+      setReadyLine(c, it, view);
+    }
+    renderChargePanel(S.standalone, live && !used ? live : null);
   }
 
   // ------------------------------------------------------------ Events
@@ -388,6 +485,7 @@
     empty.hidden = items.length > 0;
     if (!items.length) empty.textContent = t(res.error ? 'ui.empty.calendar_error' : 'ui.empty.none');
     if (fresh) setTimeout(() => S.cards.forEach((c) => c.root.classList.remove('fresh')), 1200);
+    refreshChargePanels();
   }
 
   function buildCard(key) {
@@ -402,9 +500,13 @@
     r.bar = el('div', 'bar');
     r.bar.setAttribute('role', 'img');
     r.flag = el('span', 'flag', (r.flagLabel = el('span', 'flag-label')));
+    r.ist = el('span', 'mark ist', el('i'), el('span', 'mark-label'));
+    r.soll = el('span', 'mark soll', el('i'), el('span', 'mark-label'));
+    r.ist.hidden = r.soll.hidden = true;
     r.legend = el('div', 'legend');
     r.ready = el('span', 'ready');
     r.charge.append(r.bar, r.legend, r.ready);
+    r.cp = buildChargePanel(false);
 
     // Bedienung
     r.mode = el('div', 'seg-ctl');
@@ -437,7 +539,7 @@
     r.reset.addEventListener('click', () => change(key, { mode: null, target: null }));
     r.controls = el('div', 'controls', r.mode, lab, r.reset);
 
-    r.root.append(el('div', 'head', r.when, r.title, r.badge), r.meta, r.detail, r.charge, r.controls);
+    r.root.append(el('div', 'head', r.when, r.title, r.badge), r.meta, r.detail, r.charge, r.cp.root, r.controls);
     r.key = key;
     return r;
   }
@@ -493,7 +595,7 @@
       }
       c.flag.style.setProperty('--x', T + '%');
       c.flagLabel.textContent = t('ui.pct', { n: T });
-      c.bar.append(c.flag);
+      c.bar.append(c.flag, c.ist, c.soll);
       c.bar.setAttribute('aria-label', t('ui.card.target_aria', { n: T }));
       c.ready.replaceChildren();
       if (it.ready_by) c.ready.append(icon('clock'), t('ui.card.ready_by', { time: S.fmt.short.format(d(it.ready_by)) }));
@@ -538,6 +640,12 @@
 
   // ------------------------------------------------------------ History
   function runText(r) {
+    if (r.kind === 'session') {
+      const parts = [t('ui.hist.session', { kwh: kwhText(r.kwh), price: money(r.price, r.currency) })];
+      if (typeof r.solar === 'number') parts.push(t('ui.hist.session_solar', { n: r.solar }));
+      if (typeof r.soc_start === 'number' && typeof r.soc_end === 'number') parts.push(t('ui.hist.session_soc', { a: Math.round(r.soc_start), b: Math.round(r.soc_end) }));
+      return ['ok', parts.join(' · ')];
+    }
     if (!r.ok) return ['bad', t('ui.hist.error', { error: r.error || t('ui.hist.unknown') })];
     const plan = r.soc != null ? t('ui.hist.plan', { soc: r.soc, time: S.fmt.short.format(d(r.plan_time)), title: r.title }) : null;
     const a = r.action;
@@ -566,7 +674,7 @@
       const [cls, txt] = runText(run);
       const li = el('li', 'run ' + cls);
       li.append(el('span', 'run-time', S.fmt.short.format(d(run.time))),
-        el('span', 'chip ' + (run.dry_run ? 'dry' : 'live'), t(run.dry_run ? 'ui.hist.dry' : 'ui.hist.live')),
+        run.kind === 'session' ? el('span', 'chip', icon('bolt'), t('ui.hist.charge')) : el('span', 'chip ' + (run.dry_run ? 'dry' : 'live'), t(run.dry_run ? 'ui.hist.dry' : 'ui.hist.live')),
         el('span', 'run-text', txt));
       if (run.count > 1) li.append(el('span', 'run-note', t('ui.hist.repeat', { n: run.count, time: S.fmt.short.format(d(run.last_time)) })));
       if (run.problems) li.append(el('span', 'run-note', t(run.problems > 1 ? 'ui.hist.problems_many' : 'ui.hist.problems_one', { n: run.problems })));

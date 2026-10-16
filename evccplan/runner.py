@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from . import address, planner
+from . import address, chargeview, planner
 from .clients import (ApiError, EvccClient, EvccDown, HAClient, OrsClient, OrsDown,
                       forecast_temperature, straight_line_route)
 from .models import Event
@@ -33,6 +33,7 @@ class Runner:
         self._lock = threading.Lock()
         self._state: dict = {}
         self._last_ok: dict = {}
+        self._sessions_after = 0.0                              # monotonic time before which sessions are not read again
         self._ors_down = False
 
     def _t(self, key: str, **kw) -> str:
@@ -229,7 +230,8 @@ class Runner:
         current = veh.get("plan") or None
         last_set = self.store.get("last_set")
         action = planner.reconcile(ev.desired, current, last_set, now, cfg.language)
-        res["items"] = [_item_dict(i) for i in ev.items]
+        ests = self._estimates(ev, state, lp, float(capacity))
+        res["items"] = [_item_dict(i, ests.get(id(i))) for i in ev.items]
         res["desired"] = None if not ev.desired else {
             "title": ev.desired.item.event.title, "soc": ev.desired.soc, "time": _iso(ev.desired.time),
             "capped_from": ev.desired.capped_from, "over100": ev.desired.over100}
@@ -259,6 +261,8 @@ class Runner:
                     soc_now = lp.get("vehicleSoc")
                     if isinstance(soc_now, (int, float)) and soc_now >= ev.desired.soc:
                         text += " " + self._t("plan_set_no_charge_needed", soc="%d" % round(soc_now))
+                    else:
+                        text += self._cost_text(state, lp, ev.desired.soc, float(capacity))
                     notices.append(Notice("set:%d:%s" % (ev.desired.soc, _iso(ev.desired.time)), text, level="info"))
                 else:
                     notices.append(Notice("del:%s" % (last_set or {}).get("time"),
@@ -270,6 +274,8 @@ class Runner:
             log.info("Dry run: action %s (%s) not executed", action.kind, action.reason)
 
         self._check_effective(res, lp, last_set if action.kind == "none" else None, now, notices)
+        self._check_overrun(lp, notices)
+        self._sessions(state, name, veh.get("title") or name, now)
         self._send(res, notices, dry)
         res["ok"] = True
         self.store.prune()
@@ -319,6 +325,89 @@ class Runner:
             notices.append(Notice("noteffective:%s" % last_set["time"],
                                   self._t("not_effective", soc=last_set["soc"], time=last_set["time"]), ttl_hours=12))
 
+    def _estimates(self, ev, state: dict, lp: dict, capacity: float) -> dict:
+        """Window and cost estimate per planned, chained or later calendar item (id(item) -> view); never raises."""
+        out: dict = {}
+        try:
+            chain = [i for i in ev.items if i.status in ("geplant", "verkettet")]
+            known = lp.get("connected") is True and isinstance(lp.get("vehicleSoc"), (int, float))
+            for k, it in enumerate(chain):
+                target = float(ev.desired.soc) if k == 0 and ev.desired else float(it.target_chain)
+                if k == 0:
+                    start, earliest = (float(lp["vehicleSoc"]) if known else float(self.cfg.reserve_soc)), None
+                    guess = not known
+                else:
+                    prev = chain[k - 1]
+                    trip = prev.need_soc if prev.need_soc is not None else max(0.0, prev.target_chain - self.cfg.reserve_soc)
+                    start, earliest, guess = max(0.0, prev.target_chain - trip), prev.back_home, True
+                out[id(it)] = chargeview.estimate_view(target, start, it.ready_by, capacity, self.cfg, state, earliest, guess)
+            # later appointments (outside the chain window) are not planned yet: estimate each on its own, car back at the reserve
+            for it in ev.items:
+                if it.status == "spaeter" and it.target_alone is not None and it.ready_by:
+                    out[id(it)] = chargeview.estimate_view(float(it.target_alone), float(self.cfg.reserve_soc), it.ready_by,
+                                                           capacity, self.cfg, state)
+        except Exception:                                      # an estimate must never break a run
+            log.exception("Charge estimate failed")
+        return out
+
+    def _money(self, value: float, currency: str) -> str:
+        text = "%.2f" % value
+        if self.cfg.language == "de":
+            text = text.replace(".", ",")
+        return text + (" €" if currency == "EUR" else " " + currency)
+
+    def _cost_text(self, state: dict, lp: dict, target: float, capacity: float) -> str:
+        """Sentence with the maximum cost for the push message; empty when evcc has no price."""
+        price, currency, _ = chargeview.price_of(state)
+        known = lp.get("connected") is True and isinstance(lp.get("vehicleSoc"), (int, float))
+        start = float(lp["vehicleSoc"]) if known else float(self.cfg.reserve_soc)
+        cost = chargeview.max_cost(target, start, capacity, self.cfg.charge_loss_margin, price)
+        if not cost:
+            return ""
+        return " " + self._t("plan_set_cost" if known else "plan_set_cost_est", cost=self._money(cost["max"], currency),
+                             kwh="%.1f" % cost["kwh"])
+
+    def _check_overrun(self, lp: dict, notices: list) -> None:
+        """evcc reports a plan that cannot be reached in time (planOverrun); tell once per plan time."""
+        over = lp.get("planOverrun")
+        plan_time, end = planner._parse(lp.get("effectivePlanTime")), planner._parse(lp.get("planProjectedEnd"))
+        if isinstance(over, bool) or not isinstance(over, (int, float)) or over <= 0 or not plan_time:
+            return
+        late = ""
+        if end and end > plan_time:
+            late = self._t("plan_overrun_by", min="%d" % round((end - plan_time).total_seconds() / 60))
+        notices.append(Notice("overrun:%s" % _iso(plan_time),
+                              self._t("plan_overrun", soc="%d" % round(lp.get("effectivePlanSoc") or 0),
+                                      time=planner._fmt(plan_time, self.cfg.timezone), late=late),
+                              ttl_hours=12))
+
+    def _sessions(self, state: dict, name: str, title: str, now: datetime) -> None:
+        """Finished charging sessions of the vehicle with their real cost go into the history (once each)."""
+        if time.monotonic() < self._sessions_after:               # at most every 30 min, 6 h after a failure
+            return
+        self._sessions_after = time.monotonic() + 1800
+        try:
+            months = {(now.year, now.month), ((now - timedelta(days=3)).year, (now - timedelta(days=3)).month)}
+            sessions = [s for ym in sorted(months) for s in self.evcc.sessions(*ym)]
+        except ApiError as exc:
+            self._sessions_after = time.monotonic() + 6 * 3600
+            log.debug("Charging sessions not readable: %s", exc)        # e.g. evcc database off; not worth a warning per run
+            return
+        for s in sorted((x for x in sessions if isinstance(x, dict)), key=lambda x: str(x.get("finished"))):
+            fin, sid = planner._parse(s.get("finished")), s.get("id")
+            price, kwh = s.get("price"), s.get("chargedEnergy")
+            if (fin is None or fin.year < 2000 or fin < now - timedelta(days=3) or not isinstance(sid, int)
+                    or s.get("vehicle") not in (name, title) or not isinstance(price, (int, float))
+                    or not isinstance(kwh, (int, float)) or self.store.was_notified("session:%d" % sid, None)):
+                continue
+            solar = s.get("solarPercentage")
+            self.store.run_add({"kind": "session", "time": _iso(fin), "ok": True, "error": None, "problems": 0,
+                                "kwh": round(kwh, 1), "price": round(price, 2),
+                                "currency": state.get("currency") or chargeview.DEFAULT_CURRENCY,
+                                "solar": round(solar) if isinstance(solar, (int, float)) else None,
+                                "soc_start": s.get("socStart"), "soc_end": s.get("socEnd")})
+            self.store.mark_notified("session:%d" % sid)
+
     def _send(self, res: dict, notices: list, dry: bool) -> None:
         seen = set()
         for n in notices:
@@ -347,8 +436,9 @@ class Runner:
             res["notices"].append(entry)
 
 
-def _item_dict(i) -> dict:
+def _item_dict(i, charge_est=None) -> dict:
     return {
+        "charge_est": charge_est,
         "key": override_key(i.event), "has_location": bool((i.event.location or "").strip()),
         "override_mode": i.override.mode if i.override else None,
         "override_target": i.override.target if i.override else None, "manual": i.manual,

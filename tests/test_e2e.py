@@ -80,6 +80,7 @@ class Server:
     def __init__(self, state, calendar):
         self.state, self.calendar = state, calendar
         self.calls, self.notified, self.targets, self.fail_calendar = [], [], [], False
+        self.sessions = None                             # list served at /api/sessions, None = 400 (database offline)
         self.gets = []                                   # paths of all GET requests (to check what is read)
         outer = self
 
@@ -101,6 +102,8 @@ class Server:
                 outer.gets.append(u.path)
                 if u.path == "/api/state":
                     return self._reply(200, {"result": outer.state})
+                if u.path == "/api/sessions":
+                    return self._reply(400) if outer.sessions is None else self._reply(200, outer.sessions)
                 if u.path.startswith("/api/calendars/"):
                     if outer.fail_calendar:
                         return self._reply(500)
@@ -430,3 +433,95 @@ def test_ors_outage_is_reported_once_in_every_language(env):
         text = i18n.t(lang, "runner.ors_unreachable", detail="x")
         prefix = i18n.t(lang, "runner.ors_unreachable", detail="").split("(")[0].strip()
         assert text.startswith(prefix) and prefix
+
+
+# ------------------------------------------------------------ 0.5: cost forecast, overrun, session costs
+def test_plan_push_contains_max_cost_when_evcc_has_a_price(env):
+    srv, cfg, runner, state, ors, store = env
+    srv.state["tariffGrid"], srv.state["currency"] = 0.30, "EUR"
+    runner.run()
+    # connected at 67.1 %, target 45 %: nothing to charge now, so no cost sentence
+    assert srv.notified and "Maximale Kosten" not in srv.notified[-1]
+    srv.notified.clear()
+    srv.calls.clear()
+    srv.state["loadpoints"][0]["vehicleSoc"] = 20
+    srv.state["vehicles"]["db:1"]["plan"] = None
+    store.delete("last_set")
+    store._db.execute("DELETE FROM notified")
+    runner.run()
+    # (45 - 20) % of 54 kWh = 13.5 kWh, 15 % losses -> 15.9 kWh at 0.30 = 4.76
+    assert "Maximale Kosten ca. 4,76 € (15.9 kWh" in srv.notified[-1]
+
+
+def test_plan_push_without_evcc_price_has_no_cost(env):
+    srv, cfg, runner, state, ors, store = env
+    srv.state["loadpoints"][0]["vehicleSoc"] = 20
+    runner.run()
+    assert srv.notified and "Maximale Kosten" not in srv.notified[-1]
+
+
+def test_overrun_is_reported_once(env):
+    srv, cfg, runner, state, ors, store = env
+    runner.run()
+    lp = srv.state["loadpoints"][0]
+    lp.update({"effectivePlanTime": "2026-10-12T08:40:00Z", "effectivePlanSoc": 45, "planOverrun": 1800 * 10**9,
+               "planProjectedEnd": "2026-10-12T09:10:00Z"})
+    srv.notified.clear()
+    runner.run()
+    assert any("nicht rechtzeitig erreichbar" in m and "30 Min. Verspätung" in m for m in srv.notified)
+    srv.notified.clear()
+    runner.run()
+    assert not any("nicht rechtzeitig" in m for m in srv.notified)
+
+
+def session(sid, finished, **kw):
+    return dict({"id": sid, "created": "2026-10-11T20:00:00Z", "finished": finished, "vehicle": "Ioniq 5", "chargedEnergy": 12.34,
+                 "price": 2.95, "solarPercentage": 35.2, "socStart": 40, "socEnd": 62}, **kw)
+
+
+def test_finished_sessions_are_recorded_once_with_their_cost(env):
+    srv, cfg, runner, state, ors, store = env
+    srv.sessions = [session(7, "2026-10-11T23:30:00Z"), session(8, "0001-01-01T00:00:00Z"),
+                    session(9, "2026-10-11T23:31:00Z", vehicle="Other"), session(3, "2026-08-01T10:00:00Z"),
+                    session(10, "2026-10-11T23:32:00Z", price=None)]
+    runner.run()
+    runner.run()
+    rows = [r for r in store.runs(50) if r.get("kind") == "session"]
+    assert len(rows) == 1                                                 # running, other vehicle, old, unpriced: skipped
+    assert rows[0]["kwh"] == 12.3 and rows[0]["price"] == 2.95 and rows[0]["solar"] == 35
+
+
+def test_sessions_unavailable_does_not_disturb_the_run(env):
+    srv, cfg, runner, state, ors, store = env
+    srv.sessions = None                                                   # evcc database offline: HTTP 400
+    assert runner.run()["ok"]
+
+
+def test_sessions_are_not_read_on_every_run(env):
+    srv, cfg, runner, state, ors, store = env
+    srv.sessions = []
+    runner.run()
+    runner.run()
+    runner.run()
+    assert srv.gets.count("/api/sessions") <= 2                          # one query per month in the window, once per 30 min
+    srv.sessions = None
+    runner._sessions_after = 0.0
+    runner.run()
+    n = srv.gets.count("/api/sessions")
+    runner.run()
+    assert srv.gets.count("/api/sessions") == n                          # after a failure: pause
+
+
+def test_planned_items_carry_a_charge_estimate(env):
+    srv, cfg, runner, state, ors, store = env
+    srv.state["tariffGrid"], srv.state["currency"] = 0.30, "EUR"
+    srv.state["loadpoints"][0]["vehicleSoc"] = 20
+    res = runner.run()
+    planned = [i for i in res["items"] if i["status"] in ("geplant", "verkettet")]
+    assert planned and all(i["charge_est"] for i in planned)
+    first = next(i for i in planned if i["status"] == "geplant")["charge_est"]
+    assert first["state"] == "planned" and first["start_soc"] == 20 and first["target"] == res["desired"]["soc"]
+    assert first["window"]["end"] == res["desired"]["time"] and first["cost"]["max"] > 0 and first["cost"]["estimated_start"] is False
+    later = [i for i in res["items"] if i["status"] == "spaeter"]
+    assert all(i["charge_est"] and i["charge_est"]["cost"] for i in later)        # not planned yet, still an estimate
+    assert all(i["charge_est"] is None for i in res["items"] if i["status"] not in ("geplant", "verkettet", "spaeter"))
