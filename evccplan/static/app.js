@@ -393,7 +393,8 @@
     const cost = c.cost;
     if (cost) {
       p.facts.append(cost.est != null
-        ? chipTip(t('ui.charge.cost_pv', { est: money(cost.est, cost.currency), max: money(cost.max, cost.currency) }), t('ui.charge.tip_cost_pv'))
+        ? chipTip(t('ui.charge.cost_pv', { est: money(cost.est, cost.currency), max: money(cost.max, cost.currency) }),
+          cost.est_free != null ? t('ui.charge.tip_cost_pv_feedin', { free: money(cost.est_free, cost.currency), feed: money(cost.feedin, cost.currency, 3) }) : t('ui.charge.tip_cost_pv'))
         : chipTip(t('ui.charge.cost', { cost: money(cost.max, cost.currency) }), t('ui.charge.tip_cost')));
     }
     p.note.hidden = !cost;
@@ -421,7 +422,8 @@
   // Energy planned for the trip: there, back and the reserve, in kWh (null when there is no computed demand).
   function tripKwh(it) {
     const cap = S.status && S.status.vehicle && S.status.vehicle.capacity;
-    return it.need_soc != null && cap && S.status.reserve_soc != null ? (it.need_soc + S.status.reserve_soc) / 100 * cap : null;
+    const target = it.target_chain != null ? it.target_chain : it.target_alone;      // what the bar shows: there, back, reserve incl. rounding
+    return it.need_soc != null && cap && target != null ? target / 100 * cap : null;
   }
 
   // "Charged from - to (+n late)" instead of "charged by": start and end of the charging window, delay against the plan time.

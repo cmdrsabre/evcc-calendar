@@ -33,6 +33,12 @@ def _time(v) -> Optional[datetime]:
     return dt if dt and dt.year >= 2000 else None             # evcc reports "no time" as year 1
 
 
+def _seconds(v) -> Optional[float]:
+    """evcc publishes durations as Go nanoseconds; small values are taken as seconds."""
+    n = _num(v)
+    return None if n is None else (n / 1e9 if n > 1e7 else n)
+
+
 def _iso(dt: Optional[datetime]) -> Optional[str]:
     return None if dt is None else dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -121,17 +127,28 @@ def pv_energy(segments: list, series: list, scale: float, home_kw: float, charge
     return total
 
 
-def add_pv(cost: Optional[dict], segments: list, state: dict, cfg, not_before: Optional[datetime] = None) -> None:
-    """Adds the expected PV share: cost["pv_kwh"] and cost["est"] (grid part only); "max" stays the figure without PV."""
+def add_pv(cost: Optional[dict], segments: list, state: dict, cfg, not_before: Optional[datetime] = None,
+           past: Optional[tuple] = None, solar: Optional[tuple] = None) -> None:
+    """Adds the expected PV share: cost["pv_kwh"], cost["est"] (PV valued at the feed-in tariff, like evcc) and
+    cost["est_free"] (grid part only); "max" stays the figure without PV."""
     if not cost:
         return
-    series, scale = _solar(state)
+    series, scale = solar if solar else _solar(state)
     home = _num(state.get("homePower"))
     pv = pv_energy(segments, series, scale, (home or 0.0) / 1000.0 if home is not None else 0.5, cfg.charge_power_kw, not_before)
+    if past:                                                          # (start, end, kWh really charged): the part already charged
+        a, b, charged = past
+        pv += min(charged, pv_energy([(a, b)], series, scale, (home or 0.0) / 1000.0 if home is not None else 0.5, cfg.charge_power_kw))
     pv = min(pv, cost["kwh"])
     if pv >= 0.05:
+        feed = _num(state.get("tariffFeedIn"))
+        feed = feed if feed is not None and 0 <= feed <= MAX_PRICE else 0.0
+        grid_cost = max(0.0, cost["kwh"] - pv) * cost["price"]
         cost["pv_kwh"] = round(pv, 1)
-        cost["est"] = round(max(0.0, cost["kwh"] - pv) * cost["price"], 2)
+        cost["est"] = round(grid_cost + pv * feed, 2)              # like evcc: PV energy valued at the feed-in tariff
+        if feed > 0:
+            cost["est_free"] = round(grid_cost, 2)                  # what is actually paid to the grid
+            cost["feedin"] = round(feed, 4)
 
 
 def max_cost(target: float, start_soc: float, capacity_kwh: float, loss_margin: float,
@@ -173,7 +190,20 @@ def _plan(state: dict, lp: dict, veh: dict, now: datetime) -> Optional[dict]:
     return min(cands, key=lambda c: c["time"]) if cands else None
 
 
-def extract(state, vehicle: str, now: datetime, loadpoint: Optional[dict] = None) -> dict:
+def remember_solar(hist: dict, series: list, now: datetime) -> list:
+    """Keeps the last forecast value of every quarter hour while it is still ahead, so the forecast can be looked up
+    for the time that has passed (evcc drops passed slots). Returns the series merged with the remembered values."""
+    for t, v in series:
+        if t >= now - timedelta(minutes=15):
+            hist[t] = v
+    for t in [t for t in hist if t < now - timedelta(days=2)]:
+        del hist[t]
+    merged = dict(series)
+    merged.update(hist)
+    return sorted(merged.items())
+
+
+def extract(state, vehicle: str, now: datetime, loadpoint: Optional[dict] = None, solar_hist: Optional[dict] = None) -> dict:
     """Raw values for build(); empty when there is no plan or no vehicle capacity."""
     if not isinstance(state, dict):
         return {}
@@ -186,12 +216,16 @@ def extract(state, vehicle: str, now: datetime, loadpoint: Optional[dict] = None
     if not cap or not plan:
         return {}
     slots = _slots(lp)
+    series, scale = _solar(state)
+    if solar_hist is not None:
+        series = remember_solar(solar_hist, series, now)
     price, currency, source = price_of(state, [(s["start"], s["end"]) for s in slots])
     return {"capacity": cap, "plan": plan, "connected": lp.get("connected") is True,
             "charging": lp.get("charging") is True, "soc": _num(lp.get("vehicleSoc")),
+            "charge_s": _seconds(lp.get("chargeDuration")),
             "charged_kwh": (_num(lp.get("chargedEnergy")) or 0.0) / 1000.0,         # this session, from the grid side (Wh in evcc)
             "start": _time(lp.get("planProjectedStart")), "end": _time(lp.get("planProjectedEnd")),
-            "evcc": state, "slots": slots, "grid_slots": _rates((state.get("forecast") or {}).get("grid")
+            "evcc": state, "solar": (series, scale), "slots": slots, "grid_slots": _rates((state.get("forecast") or {}).get("grid")
                                                  if isinstance(state.get("forecast"), dict) else None), "price": price, "currency": currency, "price_source": source}
 
 
@@ -239,14 +273,16 @@ def build(raw: dict, cfg, now: datetime) -> Optional[dict]:
         if fc is not None:
             price, source = fc, "forecast"
     # what the whole charge costs, not what is left: while charging, go back to the state of charge at the start of the plan
-    plan_start_soc = start_soc
+    plan_start_soc, past = start_soc, None
     if state == "charging" and now >= w_start and raw["charged_kwh"] > 0:
         plan_start_soc = max(0.0, soc - raw["charged_kwh"] * (1.0 - margin) / cap * 100.0)
+        dur = raw["charge_s"] if raw["charge_s"] else raw["charged_kwh"] / power * 3600.0     # time since the charge started
+        past = (now - timedelta(seconds=dur), now, raw["charged_kwh"])
     cost = None if done else max_cost(target, plan_start_soc, cap, margin, price)
     if cost:
         cost.update({"currency": raw["currency"], "source": source, "estimated_start": not known})
         add_pv(cost, [(s["start"], s["end"]) for s in raw["slots"]] if raw["slots"] and connected else [(w_start, w_end)],
-               raw["evcc"], cfg)
+               raw["evcc"], cfg, now if past else None, past, raw["solar"])
     return {"state": state, "target": target, "soc": soc, "start_soc": round(start_soc, 1), "deadline": _iso(deadline),
             "window": {"start": _iso(w_start), "end": _iso(w_end), "estimated": estimated,
                        "hours": round(calc.hours_to_charge(target - plan_start_soc, cap, power, margin), 2), "segments": segments},
