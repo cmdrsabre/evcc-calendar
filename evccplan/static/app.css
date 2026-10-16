@@ -277,10 +277,6 @@ button, select, input { font: inherit; color: inherit; }
 .mark.ist .mark-label { right: 4px; }
 .mark.soll .mark-label { left: 4px; }
 .mark.ist .mark-label { color: var(--ok); }
-.cp-progress { margin: 0; font-weight: 650; }
-.cp-progress.is-ahead, .cp-progress.is-on { color: var(--ok); }
-.cp-progress.is-behind { color: var(--warn); }
-.cp-cost { margin: 0; font-weight: 600; }
 .live-box { border-top: 1px solid var(--line); padding-top: .9rem; display: grid; gap: .6rem; }
 .live-box h3 { margin: 0; font-size: 1rem; }
 .live-list { margin: 0; display: grid; gap: .35rem; }

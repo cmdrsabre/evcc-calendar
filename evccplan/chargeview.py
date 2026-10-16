@@ -82,6 +82,58 @@ def price_of(state: dict, windows: Optional[list] = None) -> tuple:
     return p, cur, "grid"
 
 
+def _solar(state: dict) -> tuple:
+    """(series [(time, kW)], scale) from forecast.solar; evcc sends the timeseries as [unix time, W]."""
+    fc = state.get("forecast") if isinstance(state.get("forecast"), dict) else {}
+    sol = fc.get("solar") if isinstance(fc.get("solar"), dict) else {}
+    series = []
+    for e in sol.get("timeseries") if isinstance(sol.get("timeseries"), list) else []:
+        if isinstance(e, (list, tuple)) and len(e) >= 2:
+            t, w = _time(e[0]), _num(e[1])
+            if t and w is not None:
+                series.append((t, max(0.0, w) / 1000.0))
+    scale = _num(sol.get("scale"))
+    return sorted(series), min(1.0, scale) if scale is not None and scale > 0 else 1.0    # only ever reduce the forecast
+
+
+def _pv_kw(series: list, at: datetime) -> float:
+    """Interpolated forecast power; 0 outside the forecast."""
+    if len(series) < 2 or at < series[0][0] or at > series[-1][0]:
+        return 0.0
+    for (t0, v0), (t1, v1) in zip(series, series[1:]):
+        if t0 <= at <= t1:
+            span = (t1 - t0).total_seconds()
+            return v0 if span <= 0 else v0 + (v1 - v0) * (at - t0).total_seconds() / span
+    return 0.0
+
+
+def pv_energy(segments: list, series: list, scale: float, home_kw: float, charge_kw: float,
+              not_before: Optional[datetime] = None) -> float:
+    """Grid energy (kWh) the PV surplus is expected to cover while charging in the segments (no feed-in value, no battery)."""
+    step, total = timedelta(minutes=5), 0.0
+    for a, b in segments:
+        t = max(a, not_before) if not_before else a
+        while t < b:
+            dt = min(step, b - t)
+            surplus = max(0.0, _pv_kw(series, t + dt / 2) * scale - home_kw)
+            total += min(charge_kw, surplus) * dt.total_seconds() / 3600.0
+            t += dt
+    return total
+
+
+def add_pv(cost: Optional[dict], segments: list, state: dict, cfg, not_before: Optional[datetime] = None) -> None:
+    """Adds the expected PV share: cost["pv_kwh"] and cost["est"] (grid part only); "max" stays the figure without PV."""
+    if not cost:
+        return
+    series, scale = _solar(state)
+    home = _num(state.get("homePower"))
+    pv = pv_energy(segments, series, scale, (home or 0.0) / 1000.0 if home is not None else 0.5, cfg.charge_power_kw, not_before)
+    pv = min(pv, cost["kwh"])
+    if pv >= 0.05:
+        cost["pv_kwh"] = round(pv, 1)
+        cost["est"] = round(max(0.0, cost["kwh"] - pv) * cost["price"], 2)
+
+
 def max_cost(target: float, start_soc: float, capacity_kwh: float, loss_margin: float,
              price: Optional[float]) -> Optional[dict]:
     """Upper bound: battery energy from start to target plus charging losses, all at the grid price."""
@@ -137,8 +189,9 @@ def extract(state, vehicle: str, now: datetime, loadpoint: Optional[dict] = None
     price, currency, source = price_of(state, [(s["start"], s["end"]) for s in slots])
     return {"capacity": cap, "plan": plan, "connected": lp.get("connected") is True,
             "charging": lp.get("charging") is True, "soc": _num(lp.get("vehicleSoc")),
+            "charged_kwh": (_num(lp.get("chargedEnergy")) or 0.0) / 1000.0,         # this session, from the grid side (Wh in evcc)
             "start": _time(lp.get("planProjectedStart")), "end": _time(lp.get("planProjectedEnd")),
-            "slots": slots, "grid_slots": _rates((state.get("forecast") or {}).get("grid")
+            "evcc": state, "slots": slots, "grid_slots": _rates((state.get("forecast") or {}).get("grid")
                                                  if isinstance(state.get("forecast"), dict) else None), "price": price, "currency": currency, "price_source": source}
 
 
@@ -185,13 +238,18 @@ def build(raw: dict, cfg, now: datetime) -> Optional[dict]:
         fc = _mean_price(raw["grid_slots"], [(w_start, w_end)])
         if fc is not None:
             price, source = fc, "forecast"
-    cost = None if done else max_cost(target, start_soc, cap, margin, price)
+    # what the whole charge costs, not what is left: while charging, go back to the state of charge at the start of the plan
+    plan_start_soc = start_soc
+    if state == "charging" and now >= w_start and raw["charged_kwh"] > 0:
+        plan_start_soc = max(0.0, soc - raw["charged_kwh"] * (1.0 - margin) / cap * 100.0)
+    cost = None if done else max_cost(target, plan_start_soc, cap, margin, price)
     if cost:
-        cost.update({"currency": raw["currency"], "source": source, "estimated_start": not known,
-                     "remaining": state == "charging"})
+        cost.update({"currency": raw["currency"], "source": source, "estimated_start": not known})
+        add_pv(cost, [(s["start"], s["end"]) for s in raw["slots"]] if raw["slots"] and connected else [(w_start, w_end)],
+               raw["evcc"], cfg)
     return {"state": state, "target": target, "soc": soc, "start_soc": round(start_soc, 1), "deadline": _iso(deadline),
             "window": {"start": _iso(w_start), "end": _iso(w_end), "estimated": estimated,
-                       "hours": round(need_h, 2), "segments": segments},
+                       "hours": round(calc.hours_to_charge(target - plan_start_soc, cap, power, margin), 2), "segments": segments},
             "progress": progress, "cost": cost, "rate_pct_h": round(rate, 1)}
 
 
@@ -215,7 +273,8 @@ def estimate_view(target: float, start_soc: float, ready_by: datetime, capacity:
             price, source = fc, "forecast"
     cost = max_cost(target, start_soc, capacity, cfg.charge_loss_margin, price)
     if cost:
-        cost.update({"currency": currency, "source": source, "estimated_start": estimated_start, "remaining": False})
+        cost.update({"currency": currency, "source": source, "estimated_start": estimated_start})
+        add_pv(cost, [(start, ready_by)], state, cfg)
     return {"state": "planned", "target": target, "soc": None, "start_soc": round(start_soc, 1), "deadline": _iso(ready_by),
             "window": {"start": _iso(start), "end": _iso(ready_by), "estimated": True, "hours": round(need_h, 2),
                        "segments": [{"start": _iso(start), "end": _iso(ready_by)}]},

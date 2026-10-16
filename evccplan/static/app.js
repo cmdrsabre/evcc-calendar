@@ -363,6 +363,9 @@
     } catch (e) { return num(value) + ' ' + (currency || ''); }
   }
 
+  // A bubble whose explanation shows on hover (native tooltip, no script).
+  function chipTip(text, tip) { const li = el('li', 'chip', text); li.title = tip; return li; }
+
   function buildChargePanel(title) {
     const p = {};
     p.root = el('section', 'cp');
@@ -371,14 +374,12 @@
     p.facts = el('ul', 'facts');
     p.window = el('p', 'cp-window');
     p.window.hidden = !title;                       // in a calendar card the times are in its "charged" line
-    p.progress = el('p', 'cp-progress');
-    p.cost = el('p', 'cp-cost');
     p.note = el('p', 'live-note');
-    p.root.append(...(title ? [el('h3', null, t('ui.charge.title'))] : []), p.facts, p.window, p.progress, p.cost, p.note);
+    p.root.append(...(title ? [el('h3', null, t('ui.charge.title'))] : []), p.facts, p.window, p.note);
     return p;
   }
 
-  function renderChargePanel(p, c) {
+  function renderChargePanel(p, c, tripKwh) {
     if (!c || !S.fmt) { p.root.hidden = true; return; }
     p.root.hidden = false;
     const f = S.fmt, w = c.window || {};
@@ -387,17 +388,19 @@
     p.window.textContent = c.state === 'done' ? t('ui.charge.target_at', { soc: c.target, time: f.time.format(d(c.deadline)) })
       : t(w.estimated ? 'ui.charge.window_est' : 'ui.charge.window', { start: f.short.format(d(w.start)), end: f.time.format(d(w.end)) });
 
-    const g = c.progress;
-    p.progress.className = 'cp-progress' + (g ? ' is-' + g.kind : '');
-    p.progress.textContent = !g ? '' : g.kind === 'on' ? t('ui.charge.on') : t(g.kind === 'ahead' ? 'ui.charge.ahead' : 'ui.charge.behind', { m: minutesText(g.minutes) });
-    p.progress.hidden = !g;
-
+    // bubbles: state, duration, energy planned for the trip (there, back, reserve), cost
+    if (typeof tripKwh === 'number') p.facts.append(chipTip(t('ui.charge.kwh_trip', { kwh: kwhText(tripKwh) }), t('ui.charge.tip_trip')));
     const cost = c.cost;
-    p.cost.hidden = p.note.hidden = !cost;
+    if (cost) {
+      p.facts.append(cost.est != null
+        ? chipTip(t('ui.charge.cost_pv', { est: money(cost.est, cost.currency), max: money(cost.max, cost.currency) }), t('ui.charge.tip_cost_pv'))
+        : chipTip(t('ui.charge.cost', { cost: money(cost.max, cost.currency) }), t('ui.charge.tip_cost')));
+    }
+    p.note.hidden = !cost;
     if (!cost) return;
-    p.cost.textContent = t(cost.remaining ? 'ui.charge.cost_remaining' : 'ui.charge.cost', { cost: money(cost.max, cost.currency) });
     const src = cost.source === 'forecast' ? ' (' + t('ui.charge.price_forecast') + ')' : '';
     p.note.textContent = t('ui.charge.cost_detail', { kwh: kwhText(cost.kwh), price: money(cost.price, cost.currency, 3) }) + src
+      + (cost.pv_kwh ? '. ' + t('ui.charge.pv_note', { kwh: kwhText(cost.pv_kwh) }) : '')
       + (cost.estimated_start ? '. ' + t('ui.charge.cost_est', { soc: num(c.start_soc) }) : '');
   }
 
@@ -413,6 +416,12 @@
     mark(c.ist, 'ui.charge.mark_ist', live ? live.soc : null);
     mark(c.soll, 'ui.charge.mark_soll', live && live.progress ? live.progress.expected_soc : null);
     c.bar.classList.toggle('has-marks', !c.ist.hidden || !c.soll.hidden);
+  }
+
+  // Energy planned for the trip: there, back and the reserve, in kWh (null when there is no computed demand).
+  function tripKwh(it) {
+    const cap = S.status && S.status.vehicle && S.status.vehicle.capacity;
+    return it.need_soc != null && cap && S.status.reserve_soc != null ? (it.need_soc + S.status.reserve_soc) / 100 * cap : null;
   }
 
   // "Charged from - to (+n late)" instead of "charged by": start and end of the charging window, delay against the plan time.
@@ -439,7 +448,7 @@
       if (!c) continue;
       let view = it.charge_est || null;
       if (live && it === first && it.ready_by && Math.abs(d(live.deadline) - d(it.ready_by)) < 120000) { view = live; used = true; }
-      renderChargePanel(c.cp, view);
+      renderChargePanel(c.cp, view, tripKwh(it));
       setMarkers(c, view === live ? live : null);
       setReadyLine(c, it, view);
     }
