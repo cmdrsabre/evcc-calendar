@@ -255,7 +255,7 @@ def test_history_records_runs(web):
     code, h, _ = c.call("GET", "/api/history")
     assert code == 200 and h["runs"], "the fixture run is recorded"
     first = h["runs"][0]
-    assert first["ok"] is True and set(first) >= {"time", "dry_run", "action", "soc", "title", "problems"}
+    assert first["ok"] is True and set(first) >= {"time", "dry_run", "action", "soc", "title", "problems", "problem_texts"}
     n = len(h["runs"])
     runner.run(force_dry=True)
     assert len(c.call("GET", "/api/history")[1]["runs"]) == n + 1
@@ -281,3 +281,31 @@ def test_language_exposed_and_switchable(web):
     assert code == 400 and "between" in res["error"]
     code, res, _ = c.call("POST", "/api/settings", {"values": {"language": "xx"}})
     assert code == 400 and res["error"] == "language: unknown language"
+
+
+def test_history_skips_unchanged_runs_and_merges_repeats(web):
+    c, runner, *_ = web
+    setup_login(c)
+    runner.run()                                     # sets the plan (live)
+    n = c.call("GET", "/api/history")[1]["total"]
+    for _ in range(3):
+        runner.run()                                 # "no change": nothing to report
+    h = c.call("GET", "/api/history")[1]
+    assert h["total"] == n and h["last"]["time"]
+    runner.run(force_dry=True)
+    runner.run(force_dry=True)                       # identical dry-run outcome: merged into one entry
+    h = c.call("GET", "/api/history")[1]
+    assert h["total"] <= n + 1
+    if h["total"] == n + 1:
+        assert h["runs"][0]["count"] == 2
+
+
+def test_history_pagination(web):
+    c, runner, *_ = web
+    setup_login(c)
+    for i in range(5):
+        runner.store.run_add({"time": "2026-01-01T00:00:0%dZ" % i, "ok": True, "problems": 0})
+    full = c.call("GET", "/api/history?limit=100")[1]
+    page = c.call("GET", "/api/history?limit=2&offset=1")[1]
+    assert page["runs"] == full["runs"][1:3] and page["total"] == full["total"]
+    assert c.call("GET", "/api/history?limit=x")[0] == 400

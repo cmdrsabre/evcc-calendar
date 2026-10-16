@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+- Run history lists only runs with something to report (plan set or removed, problems, errors). Runs without changes are no longer stored; the tab shows the time of the last run instead.
+- Identical consecutive entries are merged ("3× until ...").
+- Problem texts are stored with each entry and shown in the history.
+- History is paged (20 per page, "Show more"). `GET /api/history` takes `limit` (1 to 100) and `offset` and returns `total` and `last`.
+
 ## 0.4.0
 - Live status on the vehicle card: plugged in, charging, charge power, SoC and charged energy from evcc. Optional PV generation, grid import / feed-in and home consumption when evcc reports them. Missing values are hidden, an unreachable evcc is shown as such.
 - A background thread polls only evcc `GET /api/state` (new setting `live_poll_s`, default 10 s, 5 to 300, editable in the UI). It never starts a planning run and does no geocoding or routing. The new endpoint `GET /api/live` (login required) serves the cached value only.

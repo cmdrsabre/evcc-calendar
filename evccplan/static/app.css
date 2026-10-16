@@ -238,6 +238,8 @@ button, select, input { font: inherit; color: inherit; }
 .run.bad { border-left-color: var(--bad); }
 .run-time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 9.5em; }
 .run-text { flex: 1 1 14em; min-width: 0; overflow-wrap: anywhere; }
+.run-problem { flex: 1 1 100%; margin: 0; color: var(--warn); font-size: .85rem; overflow-wrap: anywhere; }
+.more { text-align: center; margin: 1rem 0 0; }
 .run-note { color: var(--warn); font-size: .85rem; }
 .group { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .6rem 1rem 1rem; margin: 0 0 1rem; box-shadow: var(--shadow); }
 .group legend { font-weight: 650; padding: 0 .4em; }

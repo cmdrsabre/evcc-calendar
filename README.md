@@ -95,7 +95,8 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 | 0.1 | Read calendar, set plan in evcc, dry run, push via Home Assistant, simple status page | done |
 | 0.2 | Login, per-appointment overrides (car / no car / charge target), new UI, images, Docker image on ghcr.io | done |
 | 0.3 | More functions in the UI: edit rules and consumption values, history | done |
-| 0.4 | Live status in the UI (plugged in, charging, power, SoC, charged energy; optional PV / grid / home values from evcc) with a configurable polling interval, link to the GitHub page next to the version number | current |
+| 0.4 | Live status in the UI (plugged in, charging, power, SoC, charged energy; optional PV / grid / home values from evcc) with a configurable polling interval, link to the GitHub page next to the version number | done |
+| 0.5 | Run history lists only runs with something to report (repeats are merged), shows the problem texts, is paged, and shows the time of the last run | current |
 
 ### Future ideas
 Not scheduled for any version yet:
