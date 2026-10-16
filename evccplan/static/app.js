@@ -547,24 +547,34 @@
     return ['', plan ? t('ui.hist.no_change', { plan }) : t('ui.plan.none')];
   }
 
-  async function loadHistory() {
-    const r = await api('GET', '/api/history');
+  const HIST_PAGE = 20;
+
+  async function loadHistory(more) {
+    const shown = $('runs-list').children.length;
+    const offset = more ? shown : 0;
+    const limit = more ? HIST_PAGE : Math.min(Math.max(HIST_PAGE, shown), 100);   // a refresh keeps the pages already loaded
+    const r = await api('GET', '/api/history?limit=' + limit + '&offset=' + offset);
     if (r.status === 401) return boot();
     if (!r.ok) return toast(r.data.error || t('ui.err.history_load'), true);
     if (!S.fmt) S.fmt = makeFormatters(S.tz);
     const runs = r.data.runs || [];
-    $('runs-empty').hidden = runs.length > 0;
     const ul = $('runs-list');
-    ul.replaceChildren();
+    if (!more) ul.replaceChildren();
+    const last = r.data.last || {};
+    $('runs-last').textContent = last.time ? t('ui.hist.last', { time: S.fmt.short.format(d(last.time)) }) : '';
     runs.forEach((run) => {
       const [cls, txt] = runText(run);
       const li = el('li', 'run ' + cls);
       li.append(el('span', 'run-time', S.fmt.short.format(d(run.time))),
         el('span', 'chip ' + (run.dry_run ? 'dry' : 'live'), t(run.dry_run ? 'ui.hist.dry' : 'ui.hist.live')),
         el('span', 'run-text', txt));
+      if (run.count > 1) li.append(el('span', 'run-note', t('ui.hist.repeat', { n: run.count, time: S.fmt.short.format(d(run.last_time)) })));
       if (run.problems) li.append(el('span', 'run-note', t(run.problems > 1 ? 'ui.hist.problems_many' : 'ui.hist.problems_one', { n: run.problems })));
+      (run.problem_texts || []).forEach((p) => li.append(el('p', 'run-problem', p)));
       ul.append(li);
     });
+    $('runs-empty').hidden = ul.children.length > 0;
+    $('runs-more').hidden = ul.children.length >= (r.data.total || 0);
   }
 
   // ------------------------------------------------------------ Settings
@@ -621,7 +631,8 @@
     const ul = $('rules-list');
     ul.replaceChildren();
     data.values.rules.forEach((r) => addRuleRow(r.match, r.mode));
-    $('settings-reset').hidden = !data.changed.length;
+    $('runs-more').addEventListener('click', () => loadHistory(true));
+  $('settings-reset').hidden = !data.changed.length;
   }
 
   function addRuleRow(match, mode) {

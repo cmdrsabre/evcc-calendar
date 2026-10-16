@@ -153,14 +153,29 @@ class Runner:
     def _record(self, res: dict) -> None:
         """One compact history entry per run (shown in the UI)."""
         act, dz = res.get("action") or {}, res.get("desired") or {}
+        problems = [str(x)[:300] for x in (res.get("problems") or [])[:5]]
+        noteworthy = (not res["ok"] or problems or act.get("error")
+                      or act.get("kind") in ("set", "delete"))
+        if not noteworthy:                                     # "no change" runs are not listed, the UI shows the last run time
+            return
         try:
-            self.store.run_add({
+            rec = {
                 "time": res["time"], "dry_run": res["dry_run"], "ok": res["ok"], "error": res["error"],
                 "action": act.get("kind"), "reason": act.get("reason"), "done": act.get("done"),
                 "action_error": act.get("error"), "soc": dz.get("soc"), "plan_time": dz.get("time"),
                 "title": dz.get("title"), "items": len(res.get("items") or []),
                 "notices": len(res.get("notices") or []), "problems": len(res.get("problems") or []),
-            })
+                "problem_texts": problems,
+            }
+            sig = [rec[k] for k in ("dry_run", "ok", "error", "action", "done", "action_error", "soc", "plan_time", "problem_texts")]
+            last = (self.store.runs(1) or [None])[0]
+            if last and last.get("sig") == sig:                # same outcome as the previous entry: count it, do not repeat it
+                last["count"] = last.get("count", 1) + 1
+                last["last_time"] = rec["time"]
+                self.store.run_update_last(last)
+            else:
+                rec["sig"] = sig
+                self.store.run_add(rec)
         except Exception:                                      # history must never break a run
             log.exception("Could not save run history")
 

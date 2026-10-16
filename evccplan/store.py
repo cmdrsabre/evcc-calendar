@@ -87,10 +87,19 @@ class Store:
             self._db.execute("DELETE FROM runs WHERE id <= (SELECT MAX(id) FROM runs) - ?", (keep,))
             self._db.commit()
 
-    def runs(self, limit: int = 100) -> list:
+    def run_update_last(self, rec: dict) -> None:
         with self._lock:
-            rows = self._db.execute("SELECT rec FROM runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            self._db.execute("UPDATE runs SET ts=?, rec=? WHERE id=(SELECT MAX(id) FROM runs)", (time.time(), json.dumps(rec)))
+            self._db.commit()
+
+    def runs(self, limit: int = 100, offset: int = 0) -> list:
+        with self._lock:
+            rows = self._db.execute("SELECT rec FROM runs ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
         return [json.loads(r[0]) for r in rows]
+
+    def run_count(self) -> int:
+        with self._lock:
+            return self._db.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
 
     # --- Sessions (only the token hash is stored)
     def session_add(self, token_hash: str, expires: float) -> None:

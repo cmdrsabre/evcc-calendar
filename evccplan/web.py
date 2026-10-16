@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from . import __version__, i18n
 from .auth import MIN_LENGTH, SESSION_DAYS, Auth
@@ -176,7 +176,15 @@ def make_server(runner, cfg, live: LivePoller = None) -> ThreadingHTTPServer:
             if path == "/api/history":
                 if not self._authed():
                     return self._json(401, {"error": self.T("api.login_required")})
-                return self._json(200, {"runs": runner.store.runs(100)})
+                q = parse_qs(urlsplit(self.path).query)
+                try:
+                    limit = min(max(int(q.get("limit", ["20"])[0]), 1), 100)
+                    offset = max(int(q.get("offset", ["0"])[0]), 0)
+                except ValueError:
+                    return self._json(400, {"error": self.T("api.invalid_request")})
+                last = runner.last() or {}
+                return self._json(200, {"runs": runner.store.runs(limit, offset), "total": runner.store.run_count(),
+                                        "last": {"time": last.get("time"), "dry_run": last.get("dry_run"), "ok": last.get("ok")}})
             if path == "/api/personal/car":
                 if not self._authed():
                     return self._json(401, {"error": self.T("api.login_required")})
