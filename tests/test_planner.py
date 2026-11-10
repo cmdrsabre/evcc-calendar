@@ -12,7 +12,8 @@ NOW = datetime(2026, 10, 9, 10, 0, tzinfo=UTC)
 
 
 def cfg(**kw):
-    c = Config(rules=[Rule("firma*", Mode.BAHN), Rule("uni*", Mode.AUTO)], language="de")
+    c = Config(rules=[Rule("firma*", Mode.BAHN), Rule("uni*", Mode.AUTO)], language="de",
+               charge_buffer_min=0, cold_buffer_min=0)
     for k, v in kw.items():
         setattr(c, k, v)
     return c
@@ -105,13 +106,32 @@ def test_over_100_warns_and_plans_100():
     assert any(n.key.startswith("over100:a") for n in r.notices)
 
 
-def test_overlap_first_wins_with_warning():
+def test_overlap_charges_for_longer_trip_and_reports_conflict():
     s = datetime(2026, 10, 13, 9, 0, tzinfo=UTC)
     r = run([ev("a", "Uni", s, hours=8), ev("b", "Uni", s + timedelta(hours=2), hours=1)],
-            {"a": Route(45, 50), "b": Route(47, 50)})
+            {"a": Route(20, 30), "b": Route(47, 50)})
     assert r.desired.item.event.uid == "a"
+    assert r.desired.soc == 45                           # sized for the longer trip b (47 km), not a (20 km)
     assert r.items[1].status == "ueberschneidung"
     assert any(n.key.startswith("overlap") for n in r.notices)
+
+
+def test_overlap_detected_even_when_far_from_previous_event():
+    a = ev("a", "Uni", datetime(2026, 10, 13, 8, 0, tzinfo=UTC))
+    s = datetime(2026, 10, 14, 9, 0, tzinfo=UTC)
+    r = run([a, ev("b", "Uni", s, hours=3), ev("c", "Uni", s + timedelta(hours=1), hours=1)],
+            {"a": Route(47, 50), "b": Route(47, 50), "c": Route(47, 50)})
+    assert r.items[2].status == "ueberschneidung"
+    assert r.items[1].status == "spaeter"
+
+
+def test_charge_buffer_and_cold_extra():
+    start = datetime(2026, 10, 13, 8, 40, tzinfo=UTC)
+    e = ev("a", "Uni", start)
+    warm = run([e], {"a": Route(47.4, 52)}, cfg(charge_buffer_min=3, cold_buffer_min=12), temp=12.0)
+    cold = run([e], {"a": Route(47.4, 52)}, cfg(charge_buffer_min=3, cold_buffer_min=12), temp=5.0)
+    assert warm.desired.time == datetime(2026, 10, 13, 7, 15, tzinfo=UTC)   # 07:18 - 3 -> 07:15
+    assert cold.desired.time == datetime(2026, 10, 13, 7, 0, tzinfo=UTC)    # 07:18 - 15 -> 07:03 -> 07:00
 
 
 def test_past_departure_skipped():

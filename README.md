@@ -31,7 +31,8 @@ Important: only **one** instance may run live. Before moving to Unraid, stop the
   "Unclear" only means a contradiction (car and train both in the text); it caps the target at `unclear_cap_soc` and sends a push.
 - One-way distance below `min_car_km` (4 km): walk/bike, not a car appointment (not planned, not chained). The keyword "Auto" still forces car.
 - Target = (energy for outbound and return trip + `reserve_soc`), rounded up to 5 %, at most 100 %. Only planned if above the evcc minimum.
-- Departure time = appointment start − travel time − `time_buffer_min`.
+- Departure time = appointment start − travel time − `time_buffer_min`. The charge deadline is earlier by `charge_buffer_min` (3), plus `cold_buffer_min` (12) below `temp_threshold_c`, so the target is reached slightly early.
+- Overlapping car appointments are reported as a conflict: the first one is planned with enough charge for the longer of the overlapping trips.
 - Consecutive car appointments (≤ `chain_window_h` = 5 h from return to the next departure) form a chain (status "Folgetermin"): if the time at home is not enough to recharge, the target of the first appointment is raised.
 - The service only changes plans it set itself. Manual one-time plans and all repeating plans are left untouched.
 

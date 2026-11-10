@@ -35,6 +35,8 @@ class Config:
     min_car_km: float = 4.0
     manual_drive_min: float = 45.0   # assumed travel time for events without a computed route
     time_buffer_min: float = 30.0
+    charge_buffer_min: float = 3.0   # target reached this early, so small delays are not reported
+    cold_buffer_min: float = 12.0    # extra when the temperature is below temp_threshold_c
     charge_power_kw: float = 11.0
     charge_loss_margin: float = 0.15
     chain_window_h: float = 5.0
@@ -92,7 +94,7 @@ def from_dict(d: dict, env=_env) -> Config:
     c.warm = float(cons.get("warm", c.warm))
     c.cold = float(cons.get("cold", c.cold))
     c.temp_threshold_c = float(cons.get("temp_threshold_c", c.temp_threshold_c))
-    for key in ("reserve_soc", "time_buffer_min", "charge_power_kw",
+    for key in ("reserve_soc", "time_buffer_min", "charge_buffer_min", "cold_buffer_min", "charge_power_kw",
                 "charge_loss_margin", "chain_window_h", "retry_delay_s", "min_car_km", "manual_drive_min"):
         if key in d:
             setattr(c, key, float(d[key]))
