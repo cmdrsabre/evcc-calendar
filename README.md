@@ -40,6 +40,10 @@ Important: only **one** instance may run live. Before moving to Unraid, stop the
 Sent through `notify.send_message` in Home Assistant with target entities per level (`ha.notify_targets`):
 confirmations ("Ladeplan gesetzt") to the app, warnings additionally to Telegram, errors additionally as an Alexa announcement.
 Each message is sent only once per occasion.
+Once a minute the service checks the cached live status from evcc (no planning run, no extra requests) and sends:
+- a **warning** 10 minutes before the planned charge start if the car is not plugged in,
+- an **info** when the car comes back with less charge than assumed (the reserve) and charging therefore has to start earlier (a higher charge level sends nothing),
+- a **warning** when the plan can no longer be reached in time.
 
 ## Failure handling
 - **evcc not responding:** 3 attempts per run. Then a push "ALARM: evcc ist nicht erreichbar" via Home Assistant (at most every 6 h) and a red notice on the status page. The plan is not changed.
