@@ -42,8 +42,10 @@ confirmations ("Ladeplan gesetzt") to the app, warnings additionally to Telegram
 Each message is sent only once per occasion.
 Once a minute the service checks the cached live status from evcc (no planning run, no extra requests) and sends:
 - a **warning** 10 minutes before the planned charge start if the car is not plugged in,
-- an **info** when the car comes back with less charge than assumed (the reserve) and charging therefore has to start earlier (a higher charge level sends nothing),
+- an **info** when the car comes back below the assumed charge (the reserve) and charging therefore has to start at least 10 minutes earlier (a higher charge level sends nothing),
 - a **warning** when the plan can no longer be reached in time.
+
+If a push fails, the same message is tried again only after 5 minutes. Overlapping car appointments are planned for the longest of the trips, with the deadline of the one that has to leave first.
 
 ## Failure handling
 - **evcc not responding:** 3 attempts per run. Then a push "ALARM: evcc ist nicht erreichbar" via Home Assistant (at most every 6 h) and a red notice on the status page. The plan is not changed.

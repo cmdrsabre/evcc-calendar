@@ -312,7 +312,7 @@ class Runner:
                 expected = deadline - timedelta(hours=calc.hours_to_charge(
                     target - self.cfg.reserve_soc, float(view["capacity"]), self.cfg.charge_power_kw, self.cfg.charge_loss_margin))
                 # soc check: with a dynamic tariff evcc may start early for cheap slots although the car came back full
-                if soc < self.cfg.reserve_soc - 5 and expected - w_start >= timedelta(minutes=EARLIER_MIN):
+                if soc < self.cfg.reserve_soc and expected - w_start >= timedelta(minutes=EARLIER_MIN):
                     notices.append(Notice("earlier:%s" % view["deadline"], self._t(
                         "start_earlier", soc="%d" % round(soc), reserve="%d" % round(self.cfg.reserve_soc),
                         target="%d" % round(target), start=when(w_start), expected=when(expected)), level="info"))
