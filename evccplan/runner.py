@@ -309,11 +309,13 @@ class Runner:
                 soc = view["soc"]
                 expected = deadline - timedelta(hours=calc.hours_to_charge(
                     target - self.cfg.reserve_soc, float(view["capacity"]), self.cfg.charge_power_kw, self.cfg.charge_loss_margin))
-                if expected - w_start >= timedelta(minutes=EARLIER_MIN):
+                # soc check: with a dynamic tariff evcc may start early for cheap slots although the car came back full
+                if soc < self.cfg.reserve_soc - 5 and expected - w_start >= timedelta(minutes=EARLIER_MIN):
                     notices.append(Notice("earlier:%s" % view["deadline"], self._t(
                         "start_earlier", soc="%d" % round(soc), reserve="%d" % round(self.cfg.reserve_soc),
                         target="%d" % round(target), start=when(w_start), expected=when(expected)), level="info"))
-                end = w_end if not view["window"]["estimated"] else max(now, w_start) + timedelta(hours=view["window"]["hours"])
+                left_h = calc.hours_to_charge(target - soc, float(view["capacity"]), self.cfg.charge_power_kw, self.cfg.charge_loss_margin)
+                end = w_end if not view["window"]["estimated"] else max(now, w_start) + timedelta(hours=left_h)
                 if end > deadline + timedelta(minutes=1):
                     notices.append(Notice("overrun:%s" % view["deadline"], self._t(
                         "plan_overrun", soc="%d" % round(target), time=when(deadline),
@@ -328,7 +330,7 @@ class Runner:
     def _events(self, res: dict, now: datetime) -> tuple:
         """Read all calendars. A failing one falls back to its last state read; the others are planned regardless."""
         end = now + timedelta(days=self.cfg.horizon_days)
-        events, notices, failed, stale = [], [], 0, []
+        events, notices, served, stale, last_exc = [], [], 0, [], None
         try:
             self._cal_names = self.ha.calendar_names()
         except (ApiError, KeyError, TypeError, AttributeError):         # label only: keep the last names, else the entity id
@@ -339,16 +341,15 @@ class Runner:
                 got = self._retry(lambda: self.ha.calendar_events(cal, now, end), "Home Assistant (calendar %s)" % cal)
             except ApiError as exc:
                 cache = self.store.get(key)
-                failed += 1
+                last_exc = exc
                 if not cache:
-                    if failed == len(self.cfg.ha_calendars):
-                        raise
                     msg = self._t("calendar_down_nocache", calendar=cal, detail=exc)
                 else:
                     got = [Event(uid=d["uid"], title=d["title"], start=datetime.fromisoformat(d["start"]),
                                  end=datetime.fromisoformat(d["end"]), location=d["location"], description=d["description"])
                            for d in cache["events"]]
                     events += [dataclasses.replace(e, calendar=self._cal_names.get(cal, cal)) for e in got if now <= e.start <= end]
+                    served += 1
                     stale.append(cache["time"])
                     msg = self._t("calendar_down", calendar=cal, time=cache["time"], detail=exc)
                 res["problems"].append(msg)
@@ -358,7 +359,10 @@ class Runner:
             self.store.put(key, {"time": _iso(now), "events": [
                 {"uid": e.uid, "title": e.title, "start": e.start.isoformat(), "end": e.end.isoformat(),
                  "location": e.location, "description": e.description} for e in got]})
+            served += 1
             events += [dataclasses.replace(e, calendar=self._cal_names.get(cal, cal)) for e in got]
+        if last_exc and not served:                                     # nothing readable at all: abort the run
+            raise last_exc
         if stale:
             res["stale_since"] = min(stale)
         # a shared appointment can show up in several calendars with the same UID; keep the first
