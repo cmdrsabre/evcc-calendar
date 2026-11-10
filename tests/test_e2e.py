@@ -592,9 +592,12 @@ def test_watch_dry_run_and_busy_send_nothing(env):
 def test_watch_earlier_start_notifies_later_start_does_not(env):
     srv, cfg, runner, state, ors, store = env
     # assumed from the reserve (10 %): 50 points at about 9.4 kW -> about 2.9 h; evcc starts 4 h ahead
-    runner.watch(_view(state="waiting", soc=5, start="2026-10-12T04:00:00Z", end="2026-10-12T08:00:00Z", estimated=False))
+    runner.watch(_view(state="waiting", soc=3, start="2026-10-12T04:00:00Z", end="2026-10-12T08:00:00Z", estimated=False))
     assert len([m for m in srv.notified if "statt" in m]) == 1
     srv.notified.clear()
+    runner.watch(_view(state="waiting", soc=40, start="2026-10-12T04:00:00Z", end="2026-10-12T08:00:00Z",
+                       estimated=False, deadline="2026-10-12T08:10:00Z"))      # early start but the car came back full: no push
+    assert srv.notified == []
     runner.watch(_view(state="waiting", soc=40, start="2026-10-12T07:00:00Z", end="2026-10-12T08:00:00Z",
                        estimated=False, deadline="2026-10-12T08:05:00Z"))
     assert srv.notified == []
