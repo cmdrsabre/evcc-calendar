@@ -700,7 +700,7 @@
   const GROUPS = [
     ['consumption', [['warm', 'kwh100'], ['cold', 'kwh100'], ['temp_threshold_c', 'c']]],
     ['charging', [['reserve_soc', 'pct'], ['unclear_cap_soc', 'pct'], ['charge_power_kw', 'kw'], ['charge_loss_margin', ''], ['vehicle_limit_min', 'pct']]],
-    ['trips', [['min_car_km', 'km'], ['manual_drive_min', 'min'], ['time_buffer_min', 'min'], ['chain_window_h', 'h']]],
+    ['trips', [['min_car_km', 'km'], ['manual_drive_min', 'min'], ['time_buffer_min', 'min'], ['charge_buffer_min', 'min'], ['cold_buffer_min', 'min'], ['chain_window_h', 'h']]],
     ['live', [['live_poll_s', 's']]],
   ];
 

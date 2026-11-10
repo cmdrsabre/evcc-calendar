@@ -18,7 +18,7 @@ FIELDS = {
     "warm": (float, 5, 60), "cold": (float, 5, 60), "temp_threshold_c": (float, -20, 30),
     "reserve_soc": (float, 0, 50), "unclear_cap_soc": (int, 5, 100),
     "min_car_km": (float, 0, 50), "manual_drive_min": (float, 5, 600),
-    "time_buffer_min": (float, 0, 240), "chain_window_h": (float, 0, 48),
+    "time_buffer_min": (float, 0, 240), "charge_buffer_min": (float, 0, 60), "cold_buffer_min": (float, 0, 60), "chain_window_h": (float, 0, 48),
     "charge_power_kw": (float, 1, 50), "charge_loss_margin": (float, 0, 1),
     "vehicle_limit_min": (int, 0, 100), "live_poll_s": (int, MIN_INTERVAL_S, MAX_INTERVAL_S),
 }
