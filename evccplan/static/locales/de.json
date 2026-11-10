@@ -53,7 +53,7 @@
  "planner.notice.tight": "Zu enge Planung: Wiederholplan {occ} auf {rep_soc} %, danach '{title}' auf {soc} % um {time}. Dafür braucht es etwa {need} h, es bleiben {gap} h. evcc zeigt nur den früheren Zeitpunkt.",
  "planner.notice.unclear": "Einstufung unklar: Plan nur auf {soc} % statt der sonst nötigen {needed} % ('{title}').",
  "planner.overlaps": "überschneidet sich mit '{title}'",
- "planner.too_late": "Abfahrtszeit liegt in der Vergangenheit",
+ "planner.too_late": "Ladezeitpunkt liegt in der Vergangenheit",
  "planner.too_near": "unter {km} km: zu Fuß/Rad, kein Auto-Termin",
  "runner.address_unclear": "Adresse nicht eindeutig gefunden",
  "runner.address_unclear_note": "Adresse nicht eindeutig gefunden: {note}",
