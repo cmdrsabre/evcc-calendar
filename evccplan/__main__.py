@@ -56,9 +56,13 @@ def main(argv=None) -> int:
     live = LivePoller(runner.evcc, cfg)
     live.start()
     threading.Thread(target=make_server(runner, cfg, live).serve_forever, daemon=True).start()
+    next_run = 0.0
     while True:
-        runner.run()
-        time.sleep(cfg.run_every_min * 60)
+        if time.monotonic() >= next_run:
+            runner.run()
+            next_run = time.monotonic() + cfg.run_every_min * 60
+        runner.watch(live.snapshot())        # cached live view only, pushes but never plans
+        time.sleep(60)
 
 
 if __name__ == "__main__":

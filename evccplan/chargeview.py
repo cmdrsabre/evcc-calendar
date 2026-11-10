@@ -283,7 +283,7 @@ def build(raw: dict, cfg, now: datetime) -> Optional[dict]:
         cost.update({"currency": raw["currency"], "source": source, "estimated_start": not known})
         add_pv(cost, [(s["start"], s["end"]) for s in raw["slots"]] if raw["slots"] and connected else [(w_start, w_end)],
                raw["evcc"], cfg, now if past else None, past, raw["solar"])
-    return {"state": state, "target": target, "soc": soc, "start_soc": round(start_soc, 1), "deadline": _iso(deadline),
+    return {"state": state, "capacity": cap, "target": target, "soc": soc, "start_soc": round(start_soc, 1), "deadline": _iso(deadline),
             "window": {"start": _iso(w_start), "end": _iso(w_end), "estimated": estimated,
                        "hours": round(calc.hours_to_charge(target - plan_start_soc, cap, power, margin), 2), "segments": segments},
             "progress": progress, "cost": cost, "rate_pct_h": round(rate, 1)}
