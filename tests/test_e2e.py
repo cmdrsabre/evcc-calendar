@@ -80,6 +80,7 @@ class Server:
     def __init__(self, state, calendar):
         self.state, self.calendar = state, calendar
         self.calls, self.notified, self.targets, self.fail_calendar = [], [], [], False
+        self.calendars = {}                                              # entity -> events, default: self.calendar
         self.sessions = None                             # list served at /api/sessions, None = 400 (database offline)
         self.gets = []                                   # paths of all GET requests (to check what is read)
         outer = self
@@ -104,14 +105,17 @@ class Server:
                     return self._reply(200, {"result": outer.state})
                 if u.path == "/api/sessions":
                     return self._reply(400) if outer.sessions is None else self._reply(200, outer.sessions)
+                if u.path == "/api/calendars":
+                    return self._reply(200, [{"entity_id": "calendar.a_a", "name": "Familie"}])
                 if u.path.startswith("/api/calendars/"):
-                    if outer.fail_calendar:
+                    fc, ent = outer.fail_calendar, u.path.rsplit("/", 1)[1]
+                    if fc is True or (fc and ent in fc):
                         return self._reply(500)
                     q = urllib.parse.parse_qs(u.query)
                     s = datetime.fromisoformat(q["start"][0].replace("Z", "+00:00"))
                     e = datetime.fromisoformat(q["end"][0].replace("Z", "+00:00"))
                     out = []
-                    for title, a, b, loc in outer.calendar:
+                    for title, a, b, loc in outer.calendars.get(ent, outer.calendar):
                         if s <= datetime.fromisoformat(a) <= e:
                             out.append({"summary": title, "start": {"dateTime": a}, "end": {"dateTime": b},
                                         "location": loc})
@@ -159,7 +163,7 @@ def evcc_state(plan=None, **lp):
 @pytest.fixture
 def env():
     srv = Server(evcc_state(), CAL)
-    cfg = Config(ha_url=srv.url, ha_token="tok", ha_calendar="calendar.a_a", notify_targets=TARGETS,
+    cfg = Config(ha_url=srv.url, ha_token="tok", ha_calendars=["calendar.a_a"], notify_targets=TARGETS,
                  evcc_url=srv.url, evcc_key="tok", evcc_vehicle="db:1", ors_key="k", home_lat=52.3, home_lon=13.2,
                  rules=[Rule("firma*", Mode.BAHN), Rule("uni*", Mode.AUTO)], dry_run=False, retry_delay_s=0, language="de",
                  charge_buffer_min=0, cold_buffer_min=0)
@@ -289,6 +293,8 @@ def test_config_from_dict_and_problems():
     assert c.ha_url == "http://x:8123" and c.ha_token == "t" and c.evcc_key == "k"
     assert c.rules[0].mode == Mode.BAHN and c.dry_run is True
     assert any("ORS" in p for p in problems(c))
+    assert c.ha_calendars == ["calendar.a_a"]
+    assert from_dict({"ha": {"calendar": ["calendar.x", "calendar.y"]}}).ha_calendars == ["calendar.x", "calendar.y"]
 
 
 def test_ors_outage_is_collected_not_spammed_and_run_continues(env):
@@ -334,10 +340,40 @@ def test_calendar_down_uses_last_known_events_and_warns(env):
     srv.calls.clear()
     r = runner.run()
     assert r["ok"] and r["desired"]["soc"] == 45
-    assert r["stale_since"] and any("Kalender nicht lesbar" in p for p in r["problems"])
+    assert r["stale_since"] and any("nicht lesbar" in p for p in r["problems"])
     assert srv.calls and srv.calls[0][0] == "POST"                      # evcc keeps being served
     runner.run()
-    assert len([m for m in srv.notified if "Kalender nicht lesbar" in m]) == 1
+    assert len([m for m in srv.notified if "nicht lesbar" in m]) == 1
+
+
+def test_second_calendar_is_planned_too_and_shared_events_count_once(env):
+    srv, cfg, runner, state, ors, store = env
+    base = runner.run()
+    n = len(base["items"])
+    cfg.ha_calendars = ["calendar.a_a", "calendar.b"]
+    srv.calendars["calendar.b"] = srv.calendar                          # identical appointments: no duplicates
+    r = runner.run()
+    assert len(r["items"]) == n
+    assert not any(x["key"].startswith("overlap") for x in r["notices"] if "key" in x)
+
+
+def test_items_carry_calendar_display_name(env):
+    srv, cfg, runner, state, ors, store = env
+    r = runner.run()
+    assert {i["calendar"] for i in r["items"]} == {"Familie"}
+    srv.calendars["calendar.b"] = []
+    cfg.ha_calendars = ["calendar.a_a", "calendar.b"]
+    runner.run()                                                       # unknown name falls back to the entity id
+
+
+def test_one_calendar_down_other_still_planned(env):
+    srv, cfg, runner, state, ors, store = env
+    cfg.ha_calendars = ["calendar.a_a", "calendar.b"]
+    srv.calendars["calendar.b"] = []
+    srv.fail_calendar = {"calendar.b"}
+    r = runner.run()
+    assert r["ok"] and r["items"]
+    assert any("calendar.b" in p and "kein früherer Stand" in p for p in r["problems"])
 
 
 def test_home_assistant_completely_down_still_serves_evcc(env):
@@ -374,7 +410,7 @@ def test_notification_targets_by_level(env):
     assert srv.targets[k] == ["notify.a", "notify.b"]
     srv.fail_calendar = True                                         # error
     runner.run()
-    k = [k for k, m in enumerate(srv.notified) if "Kalender nicht lesbar" in m][0]
+    k = [k for k, m in enumerate(srv.notified) if "nicht lesbar" in m][0]
     assert srv.targets[k] == ["notify.a", "notify.b", "notify.c"]
 
 

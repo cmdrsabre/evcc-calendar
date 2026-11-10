@@ -1,6 +1,7 @@
 """One run: read calendar, plan, reconcile with evcc, send notices."""
 from __future__ import annotations
 
+import dataclasses
 import logging
 import threading
 import time
@@ -35,6 +36,7 @@ class Runner:
         self._last_ok: dict = {}
         self._sessions_after = 0.0                              # monotonic time before which sessions are not read again
         self._ors_down = False
+        self._cal_names: dict = {}                              # calendar entity -> display name
 
     def _t(self, key: str, **kw) -> str:
         return t(self.cfg.language, "runner." + key, **kw)
@@ -281,27 +283,48 @@ class Runner:
         self.store.prune()
 
     def _events(self, res: dict, now: datetime) -> tuple:
-        """Read the calendar; on failure continue with the last state read."""
+        """Read all calendars. A failing one falls back to its last state read; the others are planned regardless."""
         end = now + timedelta(days=self.cfg.horizon_days)
+        events, notices, failed, stale = [], [], 0, []
         try:
-            events = self._retry(lambda: self.ha.calendar_events(self.cfg.ha_calendar, now, end), "Home Assistant (calendar)")
-        except ApiError as exc:
-            cache = self.store.get("events_cache")
-            if not cache:
-                raise
-            events = [Event(uid=d["uid"], title=d["title"], start=datetime.fromisoformat(d["start"]),
-                            end=datetime.fromisoformat(d["end"]), location=d["location"], description=d["description"])
-                      for d in cache["events"]]
-            events = [e for e in events if now <= e.start <= end]
-            res["stale_since"] = cache["time"]
-            msg = self._t("calendar_down", time=cache["time"], detail=exc)
-            res["problems"].append(msg)
-            log.error(msg)
-            return events, [Notice("calendar_down", msg, ttl_hours=6, level="error")]
-        self.store.put("events_cache", {"time": _iso(now), "events": [
-            {"uid": e.uid, "title": e.title, "start": e.start.isoformat(), "end": e.end.isoformat(),
-             "location": e.location, "description": e.description} for e in events]})
-        return events, []
+            self._cal_names = self.ha.calendar_names()
+        except (ApiError, KeyError, TypeError, AttributeError):         # label only: keep the last names, else the entity id
+            pass
+        for cal in self.cfg.ha_calendars:
+            key = "events_cache:" + cal
+            try:
+                got = self._retry(lambda: self.ha.calendar_events(cal, now, end), "Home Assistant (calendar %s)" % cal)
+            except ApiError as exc:
+                cache = self.store.get(key)
+                failed += 1
+                if not cache:
+                    if failed == len(self.cfg.ha_calendars):
+                        raise
+                    msg = self._t("calendar_down_nocache", calendar=cal, detail=exc)
+                else:
+                    got = [Event(uid=d["uid"], title=d["title"], start=datetime.fromisoformat(d["start"]),
+                                 end=datetime.fromisoformat(d["end"]), location=d["location"], description=d["description"])
+                           for d in cache["events"]]
+                    events += [dataclasses.replace(e, calendar=self._cal_names.get(cal, cal)) for e in got if now <= e.start <= end]
+                    stale.append(cache["time"])
+                    msg = self._t("calendar_down", calendar=cal, time=cache["time"], detail=exc)
+                res["problems"].append(msg)
+                log.error(msg)
+                notices.append(Notice("calendar_down:" + cal, msg, ttl_hours=6, level="error"))
+                continue
+            self.store.put(key, {"time": _iso(now), "events": [
+                {"uid": e.uid, "title": e.title, "start": e.start.isoformat(), "end": e.end.isoformat(),
+                 "location": e.location, "description": e.description} for e in got]})
+            events += [dataclasses.replace(e, calendar=self._cal_names.get(cal, cal)) for e in got]
+        if stale:
+            res["stale_since"] = min(stale)
+        # a shared appointment can show up in several calendars with the same UID; keep the first
+        seen, unique = set(), []
+        for e in events:
+            if (e.uid, e.start) not in seen:
+                seen.add((e.uid, e.start))
+                unique.append(e)
+        return unique, notices
 
     def _fallback_temp(self, state: dict) -> Optional[float]:
         t = state.get("tariffTemperature")
@@ -442,7 +465,7 @@ def _item_dict(i, charge_est=None) -> dict:
         "key": override_key(i.event), "has_location": bool((i.event.location or "").strip()),
         "override_mode": i.override.mode if i.override else None,
         "override_target": i.override.target if i.override else None, "manual": i.manual,
-        "title": i.event.title, "start": _iso(i.event.start), "end": _iso(i.event.end),
+        "title": i.event.title, "calendar": i.event.calendar, "start": _iso(i.event.start), "end": _iso(i.event.end),
         "location": i.event.location, "status": i.status, "detail": i.detail,
         "mode": i.cls.mode.value if i.cls else None, "unclear": bool(i.cls and i.cls.unclear),
         "place": i.place_label,
