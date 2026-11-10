@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from . import address, chargeview, planner
+from . import address, calc, chargeview, planner
 from .clients import (ApiError, EvccClient, EvccDown, HAClient, OrsClient, OrsDown,
                       forecast_temperature, straight_line_route)
 from .models import Event
@@ -20,6 +20,10 @@ from .store import Store
 
 log = logging.getLogger("evccplan")
 GOOD_LAYERS = ("address", "venue")
+
+
+UNPLUGGED_LEAD_MIN = 10     # warn this long before the planned charge start if the car is not plugged in
+EARLIER_MIN = 10            # tell when charging has to start at least this much earlier than assumed
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
@@ -281,6 +285,45 @@ class Runner:
         self._send(res, notices, dry)
         res["ok"] = True
         self.store.prune()
+
+    def watch(self, snap: dict) -> None:
+        """Pushes only (no planning run): car not plugged in shortly before the charge start, start earlier than
+        assumed, plan no longer reachable. Works on the live poller's cached view; skipped while a run is busy."""
+        view = (snap or {}).get("charge")
+        if not view or view.get("state") == "done" or not self._lock.acquire(blocking=False):
+            return
+        try:
+            now = self.now_fn()
+            deadline = planner._parse(view.get("deadline"))
+            w_start, w_end = planner._parse(view["window"]["start"]), planner._parse(view["window"]["end"])
+            if not (deadline and w_start and w_end and now < deadline):
+                return
+            tz, target = self.cfg.timezone, view["target"]
+            when = lambda dt: planner._fmt(dt, tz)
+            notices = []
+            if view["state"] == "away":
+                if now >= w_start - timedelta(minutes=UNPLUGGED_LEAD_MIN):
+                    notices.append(Notice("unplugged:%s" % view["deadline"], self._t(
+                        "unplugged", soc="%d" % round(target), time=when(deadline), start=when(w_start))))
+            elif view.get("soc") is not None:
+                soc = view["soc"]
+                expected = deadline - timedelta(hours=calc.hours_to_charge(
+                    target - self.cfg.reserve_soc, float(view["capacity"]), self.cfg.charge_power_kw, self.cfg.charge_loss_margin))
+                if expected - w_start >= timedelta(minutes=EARLIER_MIN):
+                    notices.append(Notice("earlier:%s" % view["deadline"], self._t(
+                        "start_earlier", soc="%d" % round(soc), reserve="%d" % round(self.cfg.reserve_soc),
+                        target="%d" % round(target), start=when(w_start), expected=when(expected)), level="info"))
+                end = w_end if not view["window"]["estimated"] else max(now, w_start) + timedelta(hours=view["window"]["hours"])
+                if end > deadline + timedelta(minutes=1):
+                    notices.append(Notice("overrun:%s" % view["deadline"], self._t(
+                        "plan_overrun", soc="%d" % round(target), time=when(deadline),
+                        late=self._t("plan_overrun_by", min="%d" % round((end - deadline).total_seconds() / 60))), ttl_hours=12))
+            if notices:
+                self._send({"notices": [], "problems": []}, notices, self.cfg.dry_run)
+        except Exception:                                      # the watcher must never break the service
+            log.exception("Watch failed")
+        finally:
+            self._lock.release()
 
     def _events(self, res: dict, now: datetime) -> tuple:
         """Read all calendars. A failing one falls back to its last state read; the others are planned regardless."""

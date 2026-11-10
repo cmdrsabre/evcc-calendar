@@ -77,6 +77,8 @@
  "runner.outage": "Charge planning disrupted: {detail}",
  "runner.plan_overrun": "The plan {soc} % by {time} cannot be reached in time.{late}",
  "runner.plan_overrun_by": " evcc expects to finish about {min} min late.",
+ "runner.unplugged": "Charging to {soc} % by {time} should start at {start}, but the car is not plugged in.",
+ "runner.start_earlier": "Car plugged in at {soc} % (assumed {reserve} %): charging to {target} % now starts at {start} instead of {expected}.",
  "runner.plan_removed": "Charging plan removed: the corresponding event no longer exists.",
  "runner.plan_set": "Charging plan set: {soc} % by {time} for '{title}'.",
  "runner.plan_set_cost": "Maximum cost about {cost} ({kwh} kWh from the grid, without PV share).",

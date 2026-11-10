@@ -77,6 +77,8 @@
  "runner.outage": "Ladeplanung gestört: {detail}",
  "runner.plan_overrun": "Der Plan {soc} % bis {time} ist nicht rechtzeitig erreichbar.{late}",
  "runner.plan_overrun_by": " evcc rechnet mit etwa {min} Min. Verspätung.",
+ "runner.unplugged": "Laden auf {soc} % bis {time} sollte um {start} starten, das Auto ist aber nicht angesteckt.",
+ "runner.start_earlier": "Auto mit {soc} % angesteckt (angenommen {reserve} %): Laden auf {target} % startet jetzt um {start} statt {expected}.",
  "runner.plan_removed": "Ladeplan entfernt: Der zugehörige Termin existiert nicht mehr.",
  "runner.plan_set": "Ladeplan gesetzt: {soc} % bis {time} für '{title}'.",
  "runner.plan_set_cost": "Maximale Kosten ca. {cost} ({kwh} kWh aus dem Netz, ohne PV-Anteil).",

@@ -562,3 +562,47 @@ def test_planned_items_carry_a_charge_estimate(env):
     later = [i for i in res["items"] if i["status"] == "spaeter"]
     assert all(i["charge_est"] and i["charge_est"]["cost"] for i in later)        # not planned yet, still an estimate
     assert all(i["charge_est"] is None for i in res["items"] if i["status"] not in ("geplant", "verkettet", "spaeter"))
+
+
+def _view(state="away", soc=None, start="2026-10-12T06:05:00Z", end="2026-10-12T08:00:00Z", deadline="2026-10-12T08:00:00Z",
+          estimated=True, hours=1.9, target=60):
+    return {"charge": {"state": state, "capacity": 54, "target": target, "soc": soc, "deadline": deadline,
+                       "window": {"start": start, "end": end, "estimated": estimated, "hours": hours}}}
+
+
+def test_watch_unplugged_warns_once_shortly_before_start(env):
+    srv, cfg, runner, state, ors, store = env
+    runner.watch(_view(start="2026-10-12T06:20:00Z"))                  # 20 min ahead: too early
+    assert srv.notified == []
+    runner.watch(_view(start="2026-10-12T06:09:00Z"))
+    runner.watch(_view(start="2026-10-12T06:09:00Z"))
+    assert len([m for m in srv.notified if "nicht angesteckt" in m]) == 1
+
+
+def test_watch_dry_run_and_busy_send_nothing(env):
+    srv, cfg, runner, state, ors, store = env
+    cfg.dry_run = True
+    runner.watch(_view(start="2026-10-12T06:05:00Z"))
+    cfg.dry_run = False
+    with runner._lock:
+        runner.watch(_view(start="2026-10-12T06:05:00Z"))
+    assert srv.notified == []
+
+
+def test_watch_earlier_start_notifies_later_start_does_not(env):
+    srv, cfg, runner, state, ors, store = env
+    # assumed from the reserve (10 %): 50 points at about 9.4 kW -> about 2.9 h; evcc starts 4 h ahead
+    runner.watch(_view(state="waiting", soc=5, start="2026-10-12T04:00:00Z", end="2026-10-12T08:00:00Z", estimated=False))
+    assert len([m for m in srv.notified if "statt" in m]) == 1
+    srv.notified.clear()
+    runner.watch(_view(state="waiting", soc=40, start="2026-10-12T07:00:00Z", end="2026-10-12T08:00:00Z",
+                       estimated=False, deadline="2026-10-12T08:05:00Z"))
+    assert srv.notified == []
+
+
+def test_watch_too_late_warns_once_with_run_key(env):
+    srv, cfg, runner, state, ors, store = env
+    v = _view(state="charging", soc=20, start="2026-10-12T05:00:00Z", end="2026-10-12T08:20:00Z", estimated=False)
+    runner.watch(v)
+    runner.watch(v)
+    assert len([m for m in srv.notified if "nicht rechtzeitig" in m]) == 1
