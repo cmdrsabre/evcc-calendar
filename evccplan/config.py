@@ -19,7 +19,7 @@ class Config:
     home_address: str = ""
     ha_url: str = ""
     ha_token: str = ""
-    ha_calendar: str = "calendar.a_a"
+    ha_calendars: list = field(default_factory=lambda: ["calendar.a_a"])
     notify_targets: dict = field(default_factory=dict)   # level -> notify entities
     ha_weather: str = ""
     evcc_url: str = ""
@@ -77,7 +77,8 @@ def from_dict(d: dict, env=_env) -> Config:
     ha = d.get("ha") or {}
     c.ha_url = (ha.get("url") or "").rstrip("/")
     c.ha_token = env(ha.get("token_env"))
-    c.ha_calendar = ha.get("calendar") or c.ha_calendar
+    cal = ha.get("calendar") or c.ha_calendars
+    c.ha_calendars = [cal] if isinstance(cal, str) else [str(x) for x in cal]     # one entity or a list
     tg = ha.get("notify_targets") or {}
     for lvl in ("info", "warning", "error"):
         v = tg.get(lvl) or []
@@ -129,6 +130,8 @@ def problems(c: Config) -> list:
         out.append("ha.url is missing")
     if not c.ha_token:
         out.append("HA token is missing (environment variable from ha.token_env)")
+    if not c.ha_calendars:
+        out.append("ha.calendar is missing")
     if not c.evcc_url:
         out.append("evcc.url is missing")
     if not c.evcc_key:

@@ -12,7 +12,7 @@ Port inside the container: 80. Published port defaults to **8180** (`HOST_PORT` 
 1. Create a data folder and copy the configuration:
    - Mac: `mkdir data && cp config.example.yaml data/config.yaml`
    - Unraid: `/mnt/user/appdata/evcc-kalender/config.yaml`
-   Then review `config.yaml` (home address, vehicle name, `ha.notify_targets`).
+   Then review `config.yaml` (home address, vehicle name, `ha.notify_targets`). `ha.calendar` may be one entity or a list of several calendars.
 2. `cp .env.example .env` and fill in HA_TOKEN, EVCC_API_KEY, ORS_KEY. On Unraid enable the commented values (`DATA_DIR`, `PUID=99`, `PGID=100`). Never share `.env`.
 3. `docker compose up -d` pulls the published image `ghcr.io/cmdrsabre/evcc-calendar:latest`. To build it locally instead: `docker compose up -d --build`.
 4. Status page: `http://localhost:8180` (Mac) or `http://<unraid-ip>:8180`. "Jetzt prüfen (Dry-Run)" shows the calculated plan without writing anything.
