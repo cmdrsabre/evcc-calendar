@@ -6,20 +6,62 @@ calculates the energy needed for the outbound and return trip and sets the plan 
 
 > The web UI and messages are available in English (default) and German. Set `language: de` in `config.yaml` or change it in the UI under Settings.
 
-## Getting started (Mac test and Unraid)
-Port inside the container: 80. Published port defaults to **8180** (`HOST_PORT` in `.env`).
+## Install and configure
+Pick one way. All three start in **dry-run** mode (nothing is written to evcc, nothing is sent).
 
-1. Create a data folder and copy the configuration:
-   - Mac: `mkdir data && cp config.example.yaml data/config.yaml`
-   - Unraid: `/mnt/user/appdata/evcc-kalender/config.yaml`
-   Then review `config.yaml` (home address, vehicle name, `ha.notify_targets`). `ha.calendar` may be one entity or a list of several calendars.
-2. `cp .env.example .env` and fill in HA_TOKEN, EVCC_API_KEY, ORS_KEY. On Unraid enable the commented values (`DATA_DIR`, `PUID=99`, `PGID=100`). Never share `.env`.
-3. `docker compose up -d` pulls the published image `ghcr.io/cmdrsabre/evcc-calendar:latest`. To build it locally instead: `docker compose up -d --build`.
-4. Status page: `http://localhost:8180` (Mac) or `http://<unraid-ip>:8180`. "Jetzt prüfen (Dry-Run)" shows the calculated plan without writing anything.
-5. Logs: `docker compose logs -f`. Stop: `docker compose down`.
-6. Once the dry run looks right over a few days, set `dry_run: false` in `config.yaml` and restart with `docker compose restart`.
+**You need (all ways):**
+- Home Assistant with a calendar entity and a [long-lived access token](https://www.home-assistant.io/docs/authentication/#your-account-profile) (HA token)
+- evcc, reachable from the host, with its API key and your vehicle set up
+- a free [OpenRouteService](https://openrouteservice.org) API key (ORS key)
 
-Important: only **one** instance may run live. Before moving to Unraid, stop the Mac container with `docker compose down`.
+### 1. Docker (Compose)
+Requires: Docker with Compose.
+1. Get the files and the data folder:
+   ```
+   mkdir evcc-calendar && cd evcc-calendar && mkdir data
+   curl -O https://raw.githubusercontent.com/cmdrsabre/evcc-calendar/main/docker-compose.yml
+   curl -o .env https://raw.githubusercontent.com/cmdrsabre/evcc-calendar/main/.env.example
+   ```
+2. Edit `.env`: fill in `HA_TOKEN`, `EVCC_API_KEY`, `ORS_KEY`. Never share this file. Other host port: `HOST_PORT` (default 8180).
+3. `docker compose up -d` (first start creates `data/config.yaml` from the example).
+4. Edit `data/config.yaml` (see [Configure](#configure)), then `docker compose restart`.
+5. Open `http://localhost:8180` and set the password for the user `admin`.
+
+Logs: `docker compose logs -f`. Update: `docker compose pull && docker compose up -d`.
+
+### 2. Unraid app
+Requires: Unraid with Docker enabled.
+1. Apps → search `evcc-calendar` → Install. The app always installs the latest stable release (`latest`), never a pre-release.
+2. Fill in `HA_TOKEN`, `EVCC_API_KEY`, `ORS_KEY`, then Apply.
+3. Edit `/mnt/user/appdata/evcc-kalender/config.yaml` (created on first start, see [Configure](#configure)), then restart the container.
+4. Open the WebUI (`http://<unraid-ip>:8180`) and set the password for the user `admin`.
+
+To try a beta release: edit the container, set Repository to `ghcr.io/cmdrsabre/evcc-calendar:<tag>` (tags on the [package page](https://github.com/cmdrsabre/evcc-calendar/pkgs/container/evcc-calendar)), Apply. Set it back to `:latest` afterwards.
+
+### 3. Manual (clone and run)
+Requires: Python 3.12 (3.9+ runs the tests), git.
+1. Clone and install:
+   ```
+   git clone https://github.com/cmdrsabre/evcc-calendar.git && cd evcc-calendar
+   python -m venv .venv && . .venv/bin/activate
+   pip install -r requirements.txt
+   mkdir data && cp config.example.yaml data/config.yaml
+   ```
+2. Edit `data/config.yaml` (see [Configure](#configure)). Also set `db_path: data/state.db` and `web: {host: 127.0.0.1, port: 8180}` (port 80 needs root).
+3. Set the keys in your shell (not in a file in the repo): `export HA_TOKEN=... EVCC_API_KEY=... ORS_KEY=...`
+4. Try it: `python -m evccplan once --dry-run --config data/config.yaml`
+5. Run it: `python -m evccplan serve --config data/config.yaml`, open `http://localhost:8180`, set the password for `admin`.
+
+### Configure
+Edit `config.yaml` (Docker/Unraid: in the data folder). The minimum:
+- `home.address` (or `lat`/`lon`): where trips start
+- `ha.url`, `ha.calendar` (one entity or a list of calendars), `ha.notify_targets` (notify entities per level)
+- `evcc.url`, `evcc.vehicle` (name from evcc `/api/state`, e.g. `db:1`)
+- `language: de` for German (default `en`); `rules` for title words like car/train
+
+Everything else has defaults, most values can also be changed in the UI under Settings.
+Go live only after the dry run looks right for a few days: set `dry_run: false` in `config.yaml` and restart.
+Only **one** instance may run live.
 
 ## Commands
 - `python -m evccplan once --config config.yaml --dry-run`: single run, JSON output, writes nothing.
@@ -100,17 +142,18 @@ The language (`en` default, `de`) applies to the UI, push messages and API error
 appointment are recognised in both languages whatever the setting is. To add a language, copy `evccplan/static/locales/en.json` to `<code>.json`, translate the
 values (keep the keys and the `{placeholders}`) and select it in the UI; `tests/test_i18n.py` checks that all languages have the same keys and placeholders.
 
-## Versions and roadmap
-The version is in `evccplan/__init__.py`, changes are in `CHANGELOG.md`. Before 1.0 the middle number rises with new features,
+## Versions
+Changes in detail: [CHANGELOG.md](CHANGELOG.md). The version is in `evccplan/__init__.py`. Before 1.0 the middle number rises with new features,
 the last one with bug fixes. Version 1.0 would be the open-source release.
 
-| Version | Content | Status |
-|---|---|---|
-| 0.1 | Read calendar, set plan in evcc, dry run, push via Home Assistant, simple status page | done |
-| 0.2 | Login, per-appointment overrides (car / no car / charge target), new UI, images, Docker image on ghcr.io | done |
-| 0.3 | More functions in the UI: edit rules and consumption values, history | done |
-| 0.4 | Live status in the UI (plugged in, charging, power, SoC, charged energy; optional PV / grid / home values from evcc) with a configurable polling interval, link to the GitHub page next to the version number | done |
-| 0.5 | Run history only with news (paged, problem texts, last run time), next charge window and progress as a bar, maximum cost forecast with the evcc price, real cost of finished sessions, warning when a plan cannot be reached | current |
+| Version | Highlights |
+|---|---|
+| [0.6](CHANGELOG.md#060) (current) | Several calendars with a name label, overlap conflicts, charge buffer (extra when cold), pushes for "not plugged in" / "starts earlier" / "plan not reachable" |
+| [0.5](CHANGELOG.md#050) | Charge window, progress and cost forecast per appointment (with PV share), real cost of finished sessions, shorter run history, warning when a plan cannot be reached |
+| [0.4](CHANGELOG.md#040) | Live status (plugged in, charging, power, PV / grid / home), link to GitHub |
+| [0.3](CHANGELOG.md#030) | Settings and history tabs, English and German |
+| [0.2](CHANGELOG.md#020) | Login, per-appointment overrides, new UI, Docker image on ghcr.io |
+| [0.1](CHANGELOG.md#010) | Calendar, route, plan in evcc, dry run, push via Home Assistant |
 
 ### Future ideas
 Not scheduled for any version yet:
@@ -123,8 +166,3 @@ Not scheduled for any version yet:
 
 ## License
 [MIT](LICENSE). Third-party components and notices: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
-
-## Unraid
-A template for the Unraid Docker UI is in `templates/evcc-calendar.xml`. Until it is listed in Community Applications, copy it to
-`/boot/config/plugins/dockerMan/templates-user/evcc-calendar.xml` on the server. It then shows up under Docker → Add Container → Template.
-On first start an example `config.yaml` is created in the appdata folder; edit it and restart the container.

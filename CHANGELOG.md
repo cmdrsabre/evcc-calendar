@@ -1,11 +1,13 @@
 # Changelog
 
-## 0.5.0
+## 0.6.0
 - Several calendars: `ha.calendar` may be a list. All are read each run; a calendar that cannot be read falls back to its last state (own cache and error notice per calendar), the others are planned regardless. The same appointment (UID and start) in several calendars counts once.
 - New pushes, checked once a minute from the cached live status (no planning run): warning 10 minutes before the planned charge start if the car is not plugged in; info when the car arrives with less charge than assumed so charging starts earlier (with the new start time; nothing for a higher charge level); warning when the plan can no longer be reached in time (shares its key with the existing evcc overrun warning, so it is sent once). The "earlier" info only comes when the car arrived below the reserve and the start moves at least 10 minutes earlier. A failed push is retried after 5 minutes at the earliest. For overlapping appointments the charge deadline is that of the trip that has to leave first.
 - Each calendar card shows the display name of its source calendar as a small label behind the title (name from HA `GET /api/calendars`, falls back to the entity id).
 - Overlapping car appointments (also ones outside the chain window) are no longer planned separately: the first one is planned with enough charge for the longest of the overlapping trips, the others get the status "overlap" and a conflict notice.
 - Charge buffer: the plan time sent to evcc is earlier by `charge_buffer_min` (3) and, below `consumption.temp_threshold_c`, by `cold_buffer_min` (12) more, so small delays no longer trigger overrun reports. Both editable in the UI.
+
+## 0.5.0
 - Run history lists only runs with something to report (plan set or removed, problems, errors). Runs without changes are no longer stored; the tab shows the time of the last run instead.
 - Identical consecutive entries are merged ("3× until ...").
 - Problem texts are stored with each entry and shown in the history.
