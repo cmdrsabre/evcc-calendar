@@ -9,7 +9,7 @@ home:
 ha:
   url: http://homeassistant.local:8123
   token_env: HA_TOKEN                 # Long-Lived Access Token
-  calendar: calendar.family              # entity id of your calendar
+  calendar: calendar.family              # entity id of your calendar, or a list: [calendar.family, calendar.work]
   notify_targets:                     # notify.send_message with these target entities
     info:    [notify.mobile_app_phone]                                  # confirmations
     warning: [notify.mobile_app_phone, notify.telegram_bot]

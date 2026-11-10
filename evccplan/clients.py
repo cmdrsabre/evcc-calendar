@@ -60,6 +60,11 @@ class HAClient:
         self.url, self.timeout = url.rstrip("/"), timeout
         self.headers = {"Authorization": "Bearer " + token}
 
+    def calendar_names(self) -> dict:
+        """entity id -> display name of all calendars."""
+        _, data = _request("GET", "%s/api/calendars" % self.url, self.headers, timeout=self.timeout)
+        return {c["entity_id"]: c.get("name") or c["entity_id"] for c in data or [] if isinstance(c, dict) and c.get("entity_id")}
+
     def calendar_events(self, entity: str, start: datetime, end: datetime) -> list:
         q = urllib.parse.urlencode({"start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
                                     "end": end.strftime("%Y-%m-%dT%H:%M:%SZ")})

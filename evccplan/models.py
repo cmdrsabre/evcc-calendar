@@ -19,6 +19,7 @@ class Event:
     end: datetime            # aware, UTC
     location: str = ""
     description: str = ""
+    calendar: str = ""       # display name of the source calendar
 
 
 @dataclass

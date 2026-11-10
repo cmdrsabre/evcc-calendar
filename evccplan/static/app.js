@@ -568,7 +568,8 @@
     const o = cur(it.key);
     c.root.className = 'card ' + st[3] + (c.root.classList.contains('fresh') ? ' fresh' : '');
     c.when.textContent = S.fmt.time.format(d(it.start)) + '–' + S.fmt.time.format(d(it.end));
-    c.title.textContent = it.title || t('ui.card.untitled');
+    c.title.replaceChildren(it.title || t('ui.card.untitled'));
+    if (it.calendar) c.title.append(' ', el('span', 'cal', it.calendar));
     c.badge.className = 'badge ' + st[1];
     c.badge.replaceChildren(icon(st[2]), it.unclear ? t('ui.card.unclear', { label: stLabel }) : stLabel);
 
