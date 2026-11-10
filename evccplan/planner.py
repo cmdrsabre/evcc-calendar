@@ -99,7 +99,9 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
             drive = timedelta(minutes=route.duration_min)
             if route.estimated:
                 it.detail = T("planner.estimated_route")
-        it.ready_by = floor5min(e.start - drive - timedelta(minutes=cfg.time_buffer_min))
+        # charge buffer: evcc tends to finish a few minutes late, more so when cold (known temperature below the threshold)
+        extra = cfg.charge_buffer_min + (cfg.cold_buffer_min if it.temp_c is not None and it.temp_c < cfg.temp_threshold_c else 0.0)
+        it.ready_by = floor5min(e.start - drive - timedelta(minutes=cfg.time_buffer_min + extra))
         it.back_home = e.end + drive
         if it.ready_by <= now:
             it.status, it.detail = "zu_spaet", T("planner.too_late")
@@ -109,13 +111,22 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
     # 2. chain of car events, exclude overlaps
     autos = [i for i in ev.items if i.status == "auto"]
     chain: list = []
+    head = None      # first item of the current overlap group (the one that is planned)
+    group_end = None
     for it in autos:
-        if chain and it.event.start < chain[-1].event.end:
+        if head is not None and it.event.start < group_end:
+            # the car cannot be split: charge the head for the larger of the overlapping trips and report a conflict
             it.status = "ueberschneidung"
-            it.detail = T("planner.overlaps", title=chain[-1].event.title)
-            notices.append(Notice("overlap:%s:%s" % (chain[0].event.uid, it.event.uid),
-                                  T("planner.notice.overlap", kept=chain[-1].event.title, ignored=it.event.title)))
+            it.detail = T("planner.overlaps", title=head.event.title)
+            if it.need_soc is not None and (head.need_soc is None or it.need_soc > head.need_soc):
+                head.need_soc = it.need_soc
+                head.target_alone, _ = _target(head.need_soc, cfg.reserve_soc)
+            head.back_home = max(head.back_home, it.back_home)
+            group_end = max(group_end, it.event.end)
+            notices.append(Notice("overlap:%s:%s" % (head.event.uid, it.event.uid),
+                                  T("planner.notice.overlap", kept=head.event.title, ignored=it.event.title)))
             continue
+        head, group_end = it, it.event.end
         if chain:
             gap_h = (it.ready_by - chain[-1].back_home).total_seconds() / 3600.0
             if gap_h > cfg.chain_window_h:

@@ -36,6 +36,8 @@ manual_drive_min: 45                  # assumed travel time for appointments wit
 min_car_km: 4                        # one-way distance below this: not a car appointment (unless keyword Auto)
 unclear_cap_soc: 80                   # cap for unclear classification
 time_buffer_min: 30                   # buffer before departure
+charge_buffer_min: 3                  # charge target is reached this many minutes early
+cold_buffer_min: 12                   # extra minutes when below consumption.temp_threshold_c
 charge_power_kw: 11
 charge_loss_margin: 0.15              # loss margin when recharging between appointments
 chain_window_h: 5
