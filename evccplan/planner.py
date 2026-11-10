@@ -122,6 +122,7 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
                 head.need_soc = it.need_soc
                 head.target_alone, _ = _target(head.need_soc, cfg.reserve_soc)
             head.back_home = max(head.back_home, it.back_home)
+            head.ready_by = min(head.ready_by, it.ready_by)      # the trip that has to leave first sets the deadline
             group_end = max(group_end, it.event.end)
             notices.append(Notice("overlap:%s:%s" % (head.event.uid, it.event.uid),
                                   T("planner.notice.overlap", kept=head.event.title, ignored=it.event.title)))

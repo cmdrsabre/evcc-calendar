@@ -53,7 +53,7 @@
  "planner.notice.tight": "Planning too tight: repeating plan {occ} to {rep_soc} %, then '{title}' to {soc} % at {time}. This needs about {need} h, {gap} h remain. evcc only shows the earlier time.",
  "planner.notice.unclear": "Classification unclear: plan only to {soc} % instead of the otherwise required {needed} % ('{title}').",
  "planner.overlaps": "overlaps with '{title}'",
- "planner.too_late": "Departure time is in the past",
+ "planner.too_late": "Charge deadline is in the past",
  "planner.too_near": "under {km} km: walk/bike, not a car event",
  "runner.address_unclear": "Address not found unambiguously",
  "runner.address_unclear_note": "Address not found unambiguously: {note}",

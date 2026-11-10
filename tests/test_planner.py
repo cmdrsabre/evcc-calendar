@@ -134,6 +134,15 @@ def test_charge_buffer_and_cold_extra():
     assert cold.desired.time == datetime(2026, 10, 13, 7, 0, tzinfo=UTC)    # 07:18 - 15 -> 07:03 -> 07:00
 
 
+def test_overlap_deadline_follows_the_trip_that_leaves_first():
+    s = datetime(2026, 10, 13, 10, 0, tzinfo=UTC)
+    a = ev("a", "Uni", s, hours=1)
+    b = ev("b", "Uni", s + timedelta(minutes=30), hours=1.5)
+    r = run([a, b], {"a": Route(5, 10), "b": Route(47, 120)})
+    assert r.desired.item.event.uid == "a"
+    assert r.desired.time == datetime(2026, 10, 13, 8, 0, tzinfo=UTC)    # b: 10:30 - 120 min - 30 min, not a: 09:20
+
+
 def test_past_departure_skipped():
     e = ev("a", "Uni", NOW + timedelta(minutes=20))
     r = run([e], {"a": Route(47, 52)})
