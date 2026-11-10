@@ -626,3 +626,31 @@ def test_watch_failed_push_is_retried_only_after_a_pause(env):
     runner._watch_retry.clear()
     runner.watch(v)
     assert len(calls) == 2
+
+
+def test_watch_and_run_send_the_same_overrun_only_once(env):
+    srv, cfg, runner, state, ors, store = env
+    runner.watch(_view(state="charging", soc=20, start="2026-10-12T05:00:00Z", end="2026-10-12T08:20:00Z", estimated=False))
+    srv.state["loadpoints"][0].update(planOverrun=1200, effectivePlanTime="2026-10-12T08:00:00Z", effectivePlanSoc=60,
+                                      planProjectedEnd="2026-10-12T08:20:00Z")
+    runner.run()
+    assert len([m for m in srv.notified if "nicht rechtzeitig" in m]) == 1
+
+
+def test_watch_charging_uses_remaining_time_not_whole_charge(env):
+    srv, cfg, runner, state, ors, store = env
+    # no projected end from evcc; the whole charge would take 4 h, but only 5 points are missing
+    runner.watch(_view(state="charging", soc=55, start="2026-10-12T05:00:00Z", end="2026-10-12T08:00:00Z",
+                       estimated=True, hours=4.0))
+    assert srv.notified == []
+
+
+@pytest.mark.parametrize("order", [["calendar.a_a", "calendar.new"], ["calendar.new", "calendar.a_a"]])
+def test_calendar_outage_with_one_cached_and_one_new_calendar_keeps_running(env, order):
+    srv, cfg, runner, state, ors, store = env
+    runner.run()                                                       # calendar.a_a is cached now
+    cfg.ha_calendars = order
+    srv.fail_calendar = True
+    r = runner.run()
+    assert r["ok"] and r["items"]
+    assert any("calendar.new" in p and "kein früherer Stand" in p for p in r["problems"])
