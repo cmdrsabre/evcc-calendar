@@ -22,6 +22,7 @@ log = logging.getLogger("evccplan")
 GOOD_LAYERS = ("address", "venue")
 
 
+PUSH_RETRY_S = 300          # after a failed push `watch` waits this long before trying the same notice again
 UNPLUGGED_LEAD_MIN = 10     # warn this long before the planned charge start if the car is not plugged in
 EARLIER_MIN = 10            # tell when charging has to start at least this much earlier than assumed
 
@@ -40,6 +41,7 @@ class Runner:
         self._last_ok: dict = {}
         self._sessions_after = 0.0                              # monotonic time before which sessions are not read again
         self._ors_down = False
+        self._watch_retry: dict = {}                            # notice key -> monotonic time of the next try after a failed push
         self._cal_names: dict = {}                              # calendar entity -> display name
 
     def _t(self, key: str, **kw) -> str:
@@ -320,8 +322,14 @@ class Runner:
                     notices.append(Notice("overrun:%s" % view["deadline"], self._t(
                         "plan_overrun", soc="%d" % round(target), time=when(deadline),
                         late=self._t("plan_overrun_by", min="%d" % round((end - deadline).total_seconds() / 60))), ttl_hours=12))
+            mono = time.monotonic()
+            notices = [n for n in notices if self._watch_retry.get(n.key, 0.0) <= mono]
             if notices:
-                self._send({"notices": [], "problems": []}, notices, self.cfg.dry_run)
+                out = {"notices": [], "problems": []}
+                self._send(out, notices, self.cfg.dry_run)
+                if out["problems"]:                                # push failed: do not retry every minute
+                    for n in notices:
+                        self._watch_retry[n.key] = mono + PUSH_RETRY_S
         except Exception:                                      # the watcher must never break the service
             log.exception("Watch failed")
         finally:

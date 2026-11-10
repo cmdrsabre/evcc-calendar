@@ -609,3 +609,20 @@ def test_watch_too_late_warns_once_with_run_key(env):
     runner.watch(v)
     runner.watch(v)
     assert len([m for m in srv.notified if "nicht rechtzeitig" in m]) == 1
+
+
+def test_watch_failed_push_is_retried_only_after_a_pause(env):
+    srv, cfg, runner, state, ors, store = env
+    calls = []
+
+    def fail(*a, **k):
+        calls.append(1)
+        raise ApiError("POST 127.0.0.1/api/services/notify/mobile_app_x: HTTP 503")
+    runner.ha.notify = fail
+    v = _view(start="2026-10-12T06:05:00Z")
+    runner.watch(v)
+    runner.watch(v)                                                    # one minute later: still paused
+    assert len(calls) == 1
+    runner._watch_retry.clear()
+    runner.watch(v)
+    assert len(calls) == 2
