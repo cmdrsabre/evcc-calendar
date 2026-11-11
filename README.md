@@ -81,6 +81,7 @@ Only **one** instance may run live.
 ## Notifications
 Sent through `notify.send_message` in Home Assistant with target entities per level (`ha.notify_targets`):
 confirmations ("Ladeplan gesetzt") to the app, warnings additionally to Telegram, errors additionally as an Alexa announcement.
+Each target gets its own call; a push counts as sent when at least one target accepted it. Text for entities whose id contains `telegram` is escaped for MarkdownV2 (HA's default parse mode there).
 Each message is sent only once per occasion.
 Once a minute the service checks the cached live status from evcc (no planning run, no extra requests) and sends:
 - a **warning** 10 minutes before the planned charge start if the car is not plugged in,
@@ -148,7 +149,8 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 
 | Version | Highlights |
 |---|---|
-| [0.6](CHANGELOG.md#060) (current) | Several calendars with a name label, overlap conflicts, charge buffer (extra when cold), pushes for "not plugged in" / "starts earlier" / "plan not reachable" |
+| [0.6.1](CHANGELOG.md#061) (current) | Push fixes: per-target delivery, Telegram MarkdownV2 escaping, no warnings for past plans |
+| [0.6](CHANGELOG.md#060) | Several calendars with a name label, overlap conflicts, charge buffer (extra when cold), pushes for "not plugged in" / "starts earlier" / "plan not reachable" |
 | [0.5](CHANGELOG.md#050) | Charge window, progress and cost forecast per appointment (with PV share), real cost of finished sessions, shorter run history, warning when a plan cannot be reached |
 | [0.4](CHANGELOG.md#040) | Live status (plugged in, charging, power, PV / grid / home), link to GitHub |
 | [0.3](CHANGELOG.md#030) | Settings and history tabs, English and German |

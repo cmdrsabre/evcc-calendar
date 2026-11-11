@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+- Fix: a push that one target rejected (e.g. Telegram refusing "(" in MarkdownV2, HA answers 500) was repeated every run, also to the targets that had already delivered it. Each target now gets its own call and a push counts as sent when at least one accepted it. Text for entities with `telegram` in the id is escaped for MarkdownV2.
+- Fix: the "plan not effective" and "plan not reachable" warnings are no longer sent for plans whose time has already passed. The plan time in the "not effective" text is shown in local time instead of raw ISO.
+
 ## 0.6.0
 - Several calendars: `ha.calendar` may be a list. All are read each run; a calendar that cannot be read falls back to its last state (own cache and error notice per calendar), the others are planned regardless. The same appointment (UID and start) in several calendars counts once.
 - New pushes, checked once a minute from the cached live status (no planning run): warning 10 minutes before the planned charge start if the car is not plugged in; info when the car arrives with less charge than assumed so charging starts earlier (with the new start time; nothing for a higher charge level); warning when the plan can no longer be reached in time (shares its key with the existing evcc overrun warning, so it is sent once). The "earlier" info only comes when the car arrived below the reserve and the start moves at least 10 minutes earlier. A failed push is retried after 5 minutes at the earliest. For overlapping appointments the charge deadline is that of the trip that has to leave first.

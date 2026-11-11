@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -10,6 +12,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from .models import Event, Place, Route
+
+log = logging.getLogger(__name__)
+
+
+_MDV2 = re.compile(r"([_*\[\]()~`>#+\-=|{}.!\\])")
 
 
 class ApiError(Exception):
@@ -84,8 +91,21 @@ class HAClient:
 
     def notify(self, entities: list, title: str, message: str) -> None:
         """notify.send_message with target entities (app push, Telegram, Alexa announcement ...)."""
-        _request("POST", "%s/api/services/notify/send_message" % self.url, self.headers,
-                 {"entity_id": list(entities), "title": title, "message": message}, timeout=self.timeout)
+        # one call per entity: a target that rejects the text (e.g. Telegram MarkdownV2 on "(") must not fail the others
+        errors = []
+        for entity in entities:
+            try:
+                t, m = title, message
+                if "telegram" in entity.lower():            # shortcut: matched by entity id; HA parses Telegram text as MarkdownV2
+                    t, m = _MDV2.sub(r"\\\1", t), _MDV2.sub(r"\\\1", m)
+                _request("POST", "%s/api/services/notify/send_message" % self.url, self.headers,
+                         {"entity_id": [entity], "title": t, "message": m}, timeout=self.timeout)
+            except ApiError as exc:
+                errors.append("%s: %s" % (entity, exc))
+        if errors and len(errors) == len(list(entities)):
+            raise ApiError("; ".join(errors))
+        for e in errors:
+            log.warning("Push to one target failed (others delivered): %s", e)
 
     def weather_temperature(self, entity: str) -> Optional[float]:
         if not entity:
