@@ -658,3 +658,10 @@ def test_calendar_outage_with_one_cached_and_one_new_calendar_keeps_running(env,
     r = runner.run()
     assert r["ok"] and r["items"]
     assert any("calendar.new" in p and "kein früherer Stand" in p for p in r["problems"])
+
+
+def test_no_not_effective_warning_for_a_plan_in_the_past(env):
+    runner, notices = env[2], []
+    now = datetime(2026, 10, 14, 6, 0, tzinfo=UTC)      # plan time 2026-10-13T08:00Z is over
+    runner._check_effective({}, {"effectivePlanId": 0, "vehicleSoc": 40}, {"soc": 50, "time": "2026-10-13T08:00:00Z"}, now, notices)
+    assert notices == []

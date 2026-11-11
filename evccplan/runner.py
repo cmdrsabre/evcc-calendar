@@ -399,9 +399,9 @@ class Runner:
         soc = lp.get("vehicleSoc")
         if isinstance(soc, (int, float)) and soc >= last_set["soc"]:
             return                          # battery is already at or above the target: evcc has nothing to charge, not a fault
-        if t and eid == 0 and t - now < timedelta(days=2):
+        if t and eid == 0 and timedelta(0) < t - now < timedelta(days=2):   # past plans are history: no push
             notices.append(Notice("noteffective:%s" % last_set["time"],
-                                  self._t("not_effective", soc=last_set["soc"], time=last_set["time"]), ttl_hours=12))
+                                  self._t("not_effective", soc=last_set["soc"], time=planner._fmt(t, self.cfg.timezone)), ttl_hours=12))
 
     def _estimates(self, ev, state: dict, lp: dict, capacity: float) -> dict:
         """Window and cost estimate per planned, chained or later calendar item (id(item) -> view); never raises."""
@@ -449,8 +449,8 @@ class Runner:
         """evcc reports a plan that cannot be reached in time (planOverrun); tell once per plan time."""
         over = lp.get("planOverrun")
         plan_time, end = planner._parse(lp.get("effectivePlanTime")), planner._parse(lp.get("planProjectedEnd"))
-        if isinstance(over, bool) or not isinstance(over, (int, float)) or over <= 0 or not plan_time:
-            return
+        if isinstance(over, bool) or not isinstance(over, (int, float)) or over <= 0 or not plan_time or plan_time <= self.now_fn():
+            return                                              # a past plan is history: no push
         late = ""
         if end and end > plan_time:
             late = self._t("plan_overrun_by", min="%d" % round((end - plan_time).total_seconds() / 60))
