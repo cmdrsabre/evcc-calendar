@@ -458,8 +458,15 @@
   }
 
   // ------------------------------------------------------------ Events
+  // Appointments that need no charging are hidden by default; problems and everything planned stay visible.
+  const QUIET = new Set(['unter_min', 'bahn', 'nah', 'kein_ort', 'manuell_aus']);
   function renderItems(res) {
-    const items = res.items || [];
+    const all = res.items || [];
+    const quiet = all.filter((i) => QUIET.has(i.status)).length;
+    const items = S.showAll ? all : all.filter((i) => !QUIET.has(i.status));
+    const btn = $('btn-filter');
+    btn.hidden = quiet === 0;
+    btn.textContent = S.showAll ? t('ui.filter.hide') : t('ui.filter.show', { n: quiet });
     const fresh = S.cards.size === 0;
     const seen = new Set();
     for (const it of items) {
@@ -494,7 +501,7 @@
     }
     const empty = $('empty');
     empty.hidden = items.length > 0;
-    if (!items.length) empty.textContent = t(res.error ? 'ui.empty.calendar_error' : 'ui.empty.none');
+    if (!items.length) empty.textContent = t(res.error ? 'ui.empty.calendar_error' : quiet ? 'ui.empty.filtered' : 'ui.empty.none');
     if (fresh) setTimeout(() => S.cards.forEach((c) => c.root.classList.remove('fresh')), 1200);
     refreshChargePanels();
   }
@@ -834,6 +841,12 @@
   $('settings-form').addEventListener('submit', saveSettings);
   $('settings-reset').addEventListener('click', resetSettings);
   $('rule-add').addEventListener('click', () => addRuleRow('', 'auto').focus());
+  try { S.showAll = localStorage.getItem('showAll') === '1'; } catch (e) { /* storage not available */ }
+  $('btn-filter').addEventListener('click', () => {
+    S.showAll = !S.showAll;
+    try { localStorage.setItem('showAll', S.showAll ? '1' : '0'); } catch (e) { /* storage not available */ }
+    if (S.status) renderItems(S.status);
+  });
   $('btn-logout').addEventListener('click', async () => { await api('POST', '/api/logout', {}); S.cards.clear(); S.sig = ''; $('days').replaceChildren(); boot(); });
   $('btn-run').addEventListener('click', async () => {
     $('btn-run').disabled = true;

@@ -290,3 +290,5 @@ button, select, input { font: inherit; color: inherit; }
 .chip.charging { background: color-mix(in srgb, var(--ok) 16%, var(--card)); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
 .foot { display: flex; gap: 1rem; flex-wrap: wrap; }
 .foot a { color: var(--muted); }
+
+.filter { margin: 0 0 .8rem; font-size: .9rem; }
