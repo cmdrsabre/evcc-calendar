@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.6.1
-- Calendar view hides appointments that need no charging by default (status "below minimum", train, nearby, no location, manually off). A line above the list shows how many are hidden and shows them all on click; the choice is remembered in the browser. Planned and chained appointments and everything that needs attention stay visible.
+- Calendar view hides appointments that need no charging by default (status "below minimum", train, nearby, no location, manually off) and appointments that are not planned yet and whose own target is at or below evcc's minimum charge level, since evcc charges that anyway. A line above the list shows how many are hidden and shows them all on click; the choice is remembered in the browser. Planned and chained appointments and everything that needs attention stay visible.
 - Fix: a push that one target rejected (e.g. Telegram refusing "(" in MarkdownV2, HA answers 500) was repeated every run, also to the targets that had already delivered it. Each target now gets its own call and a push counts as sent when at least one accepted it. Text for entities with `telegram` in the id is escaped for MarkdownV2.
 - Fix: the "plan not effective" and "plan not reachable" warnings are no longer sent for plans whose time has already passed. The plan time in the "not effective" text is shown in local time instead of raw ISO.
 

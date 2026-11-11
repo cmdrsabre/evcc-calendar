@@ -462,8 +462,12 @@
   const QUIET = new Set(['unter_min', 'bahn', 'nah', 'kein_ort', 'manuell_aus']);
   function renderItems(res) {
     const all = res.items || [];
-    const quiet = all.filter((i) => QUIET.has(i.status)).length;
-    const items = S.showAll ? all : all.filter((i) => !QUIET.has(i.status));
+    // not yet planned (later / after a no-charge head) and fine on the default charge: evcc charges it anyway
+    const min = res.vehicle && res.vehicle.min_soc;
+    const isQuiet = (i) => QUIET.has(i.status)
+      || ((i.status === 'auto' || i.status === 'spaeter') && i.target_alone != null && min != null && i.target_alone <= min);
+    const quiet = all.filter(isQuiet).length;
+    const items = S.showAll ? all : all.filter((i) => !isQuiet(i));
     const btn = $('btn-filter');
     btn.hidden = quiet === 0;
     btn.textContent = S.showAll ? t('ui.filter.hide') : t('ui.filter.show', { n: quiet });
