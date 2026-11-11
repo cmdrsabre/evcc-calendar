@@ -149,7 +149,7 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 
 | Version | Highlights |
 |---|---|
-| [0.6.1](CHANGELOG.md#061) (current) | Push fixes: per-target delivery, Telegram MarkdownV2 escaping, no warnings for past plans |
+| [0.6.1](CHANGELOG.md#061) (current) | Calendar view hides appointments without charging (toggle), push fixes: per-target delivery, Telegram MarkdownV2 escaping, no warnings for past plans |
 | [0.6](CHANGELOG.md#060) | Several calendars with a name label, overlap conflicts, charge buffer (extra when cold), pushes for "not plugged in" / "starts earlier" / "plan not reachable" |
 | [0.5](CHANGELOG.md#050) | Charge window, progress and cost forecast per appointment (with PV share), real cost of finished sessions, shorter run history, warning when a plan cannot be reached |
 | [0.4](CHANGELOG.md#040) | Live status (plugged in, charging, power, PV / grid / home), link to GitHub |
