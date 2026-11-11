@@ -131,8 +131,12 @@ class Server:
                 if not self._auth():
                     return self._reply(401)
                 if self.path == "/api/services/notify/send_message":
-                    outer.notified.append(body["message"])
-                    outer.targets.append(body["entity_id"])
+                    # the client sends one call per target entity: fold them back into one entry per message
+                    if outer.notified and outer.notified[-1] == body["message"] and not set(body["entity_id"]) & set(outer.targets[-1]):
+                        outer.targets[-1] = outer.targets[-1] + body["entity_id"]
+                    else:
+                        outer.notified.append(body["message"])
+                        outer.targets.append(list(body["entity_id"]))
                 else:
                     outer.calls.append((self.command, self.path))
                 self._reply(200, {})
@@ -665,3 +669,39 @@ def test_no_not_effective_warning_for_a_plan_in_the_past(env):
     now = datetime(2026, 10, 14, 6, 0, tzinfo=UTC)      # plan time 2026-10-13T08:00Z is over
     runner._check_effective({}, {"effectivePlanId": 0, "vehicleSoc": 40}, {"soc": 50, "time": "2026-10-13T08:00:00Z"}, now, notices)
     assert notices == []
+
+
+def test_push_counts_as_sent_when_only_one_target_rejects_it():
+    from evccplan.clients import ApiError, HAClient
+    ha, calls = HAClient("http://x", "t"), []
+
+    def fake(method, url, headers, body=None, timeout=0):
+        calls.append(body["entity_id"])
+        if body["entity_id"] == ["notify.tg"]:
+            raise ApiError("HTTP 500")
+        return 200, None
+    import evccplan.clients as c
+    orig, c._request = c._request, fake
+    try:
+        ha.notify(["notify.app", "notify.tg"], "t", "m")           # one target delivered: no error
+        assert calls == [["notify.app"], ["notify.tg"]]
+        try:
+            ha.notify(["notify.tg"], "t", "m")
+            assert False, "all targets failed must raise"
+        except ApiError:
+            pass
+    finally:
+        c._request = orig
+
+
+def test_telegram_target_gets_markdownv2_escaped_text():
+    from evccplan.clients import HAClient
+    import evccplan.clients as c
+    sent = {}
+    orig, c._request = c._request, lambda m, u, h, body=None, timeout=0: sent.update({body["entity_id"][0]: body}) or (200, None)
+    try:
+        HAClient("http://x", "t").notify(["notify.mobile_app_x", "notify.telegram_bot"], "A-B", "Plan (55 %) 11.11.!")
+    finally:
+        c._request = orig
+    assert sent["notify.mobile_app_x"]["message"] == "Plan (55 %) 11.11.!"
+    assert sent["notify.telegram_bot"] == {"entity_id": ["notify.telegram_bot"], "title": "A\\-B", "message": "Plan \\(55 %\\) 11\\.11\\.\\!"}
