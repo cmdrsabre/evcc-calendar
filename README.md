@@ -75,7 +75,7 @@ Only **one** instance may run live.
 - Target = (energy for outbound and return trip + `reserve_soc`), rounded up to 5 %, at most 100 %. Only planned if above the evcc minimum.
 - Departure time = appointment start − travel time − `time_buffer_min`. The charge deadline is earlier by `charge_buffer_min` (3), plus `cold_buffer_min` (12) below `temp_threshold_c`, so the target is reached slightly early.
 - Overlapping car appointments are reported as a conflict: the first one is planned with enough charge for the longer of the overlapping trips.
-- Consecutive car appointments (≤ `chain_window_h` = 5 h from return to the next departure) form a chain (status "Folgetermin"): if the time at home is not enough to recharge, the target of the first appointment is raised.
+- Consecutive car appointments (≤ `chain_window_h` = 5 h from return to the next departure) form a chain (status "Folgetermin"): if the time at home is not enough to recharge, the target of the first appointment is raised. When there is no time to drive home in between (or the charge gained at home is worth less than the detour), the appointments form a tour: the legs are routed from one appointment to the next and the charge is planned for the whole tour once, instead of a round trip per appointment.
 - The service only changes plans it set itself. Manual one-time plans and all repeating plans are left untouched.
 
 ## Notifications
@@ -149,7 +149,8 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 
 | Version | Highlights |
 |---|---|
-| [0.6.1](CHANGELOG.md#061) (current) | Calendar view hides appointments without charging (toggle), push fixes: per-target delivery, Telegram MarkdownV2 escaping, no warnings for past plans |
+| [0.6.2](CHANGELOG.md#062) (current) | Back-to-back appointments are planned as one tour with direct legs instead of a round trip each (far lower target), correct charge window for chained appointments |
+| [0.6.1](CHANGELOG.md#061) | Calendar view hides appointments without charging (toggle), push fixes: per-target delivery, Telegram MarkdownV2 escaping, no warnings for past plans |
 | [0.6](CHANGELOG.md#060) | Several calendars with a name label, overlap conflicts, charge buffer (extra when cold), pushes for "not plugged in" / "starts earlier" / "plan not reachable" |
 | [0.5](CHANGELOG.md#050) | Charge window, progress and cost forecast per appointment (with PV share), real cost of finished sessions, shorter run history, warning when a plan cannot be reached |
 | [0.4](CHANGELOG.md#040) | Live status (plugged in, charging, power, PV / grid / home), link to GitHub |

@@ -57,6 +57,7 @@ class Route:
     distance_km: float       # one-way distance
     duration_min: float      # one-way travel time
     estimated: bool = False  # True = straight-line distance x factor instead of routing
+    dest: Optional[tuple] = None   # (lat, lon) of the destination when known (needed for tour legs)
 
 
 @dataclass
@@ -84,6 +85,18 @@ class Item:
     target_chain: Optional[int] = None
     override: Optional[Override] = None
     manual: bool = False             # no route computed, target comes from the override
+    # Tour = consecutive appointments driven directly from one to the next instead of via home.
+    leg_in: Optional[Route] = None   # route from the previous appointment (follower of a tour only)
+    leg_in_soc: Optional[float] = None
+    leg_from: str = ""               # title of the previous appointment (follower only)
+    arrival_soc: Optional[float] = None   # expected state of charge on arrival here (follower only)
+    leg_home_soc: Optional[float] = None  # drive back home (last member of a tour only)
+    tour_size: int = 1               # number of appointments in the tour (head only, 1 = no tour)
+    tour_out_soc: Optional[float] = None    # head only: first leg from home
+    tour_legs_soc: list = field(default_factory=list)   # head only: legs between the appointments
+    tour_back_soc: Optional[float] = None   # head only: drive home after the last appointment
+    tour_km: Optional[float] = None         # head only: total distance of the tour
+    home_soc: Optional[float] = None        # expected state of charge when the unit (tour/appointment) is back home
 
 
 @dataclass

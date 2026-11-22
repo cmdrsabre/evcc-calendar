@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2
+- Fix: appointments that follow each other directly are now planned as a tour (home → A → B → C → home) instead of as separate round trips from home. Before, every appointment counted its own return trip and the way out again, although there was no time to drive home, so three appointments of 48 km each needed 140 % instead of about 60 %. Between two chained appointments the car drives directly when there is no time at home, or when the charge gained at home in the gap is worth less than the detour (back home + out again − direct leg). The leg between the appointments is routed from place to place (cached like the others); otherwise the old behaviour (via home, with the charge gained in the gap) applies.
+- The first card of a tour shows the whole tour in its bar (outbound, legs, return, reserve) and the tour length; the following cards show their own leg from the previous appointment and the expected charge on arrival. They get no charge window or cost, since the car does not come home in between.
+- Fix: no more nonsensical charge window ("from 12:54 to 10:20") when the car is back home only after the planned end.
+
 ## 0.6.1
 - Calendar view hides appointments that need no charging by default (status "below minimum", train, nearby, no location, manually off) and appointments that are not planned yet and whose own target is at or below evcc's minimum charge level, since evcc charges that anyway. A line above the list shows how many are hidden and shows them all on click; the choice is remembered in the browser. Planned and chained appointments and everything that needs attention stay visible.
 - Fix: a push that one target rejected (e.g. Telegram refusing "(" in MarkdownV2, HA answers 500) was repeated every run, also to the targets that had already delivered it. Each target now gets its own call and a push counts as sent when at least one accepted it. Text for entities with `telegram` in the id is escaped for MarkdownV2.

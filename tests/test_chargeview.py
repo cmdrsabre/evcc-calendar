@@ -196,3 +196,11 @@ def test_pv_share_is_valued_at_the_feedin_tariff_like_evcc():
     st["tariffFeedIn"] = 0.07
     c = cv.build(cv.extract(st, "db:1", NOW, st["loadpoints"][0]), Config(), NOW)["cost"]
     assert abs(c["est_free"] - 2.51) < 0.02 and abs(c["est"] - (2.51 + 7.5 * 0.07)) < 0.02 and c["feedin"] == 0.07
+
+
+def test_estimate_view_without_time_left_has_no_window():
+    from datetime import datetime, timedelta, timezone
+    from evccplan import chargeview
+    from evccplan.config import Config
+    ready = datetime(2026, 10, 13, 10, 20, tzinfo=timezone.utc)
+    assert chargeview.estimate_view(100, 40, ready, 54, Config(), {}, earliest=ready + timedelta(hours=2)) is None

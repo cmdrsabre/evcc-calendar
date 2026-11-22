@@ -106,7 +106,8 @@ class Runner:
                 if not g:
                     continue
                 if g["layer"] in GOOD_LAYERS and g["confidence"] >= self.cfg.ors_min_confidence:
-                    return self._route(home, (g["lat"], g["lon"])), None, g["label"]
+                    dest = (g["lat"], g["lon"])
+                    return dataclasses.replace(self._route(home, dest), dest=dest), None, g["label"]
                 best_note = best_note or self._t("best_hit", label=g["label"], layer=g["layer"],
                                                  conf="%.1f" % g["confidence"])
         except OrsDown as exc:
@@ -227,7 +228,7 @@ class Runner:
 
         self.store.prune_overrides(_iso(now - timedelta(days=2)))
         ev = planner.evaluate(events, now, cfg, float(capacity), min_soc, self.resolve, temp_at,
-                              self.store.overrides())
+                              self.store.overrides(), leg=self._route)
         notices = list(ev.notices) + cal_notices
         if self._ors_down:
             res["problems"].append(self._t("ors_down_problem"))
@@ -410,14 +411,15 @@ class Runner:
             chain = [i for i in ev.items if i.status in ("geplant", "verkettet")]
             known = lp.get("connected") is True and isinstance(lp.get("vehicleSoc"), (int, float))
             for k, it in enumerate(chain):
+                if it.leg_from:
+                    continue                       # follower of a tour: the car does not come home, nothing to charge
                 target = float(ev.desired.soc) if k == 0 and ev.desired else float(it.target_chain)
                 if k == 0:
                     start, earliest = (float(lp["vehicleSoc"]) if known else float(self.cfg.reserve_soc)), None
                     guess = not known
                 else:
-                    prev = chain[k - 1]
-                    trip = prev.need_soc if prev.need_soc is not None else max(0.0, prev.target_chain - self.cfg.reserve_soc)
-                    start, earliest, guess = max(0.0, prev.target_chain - trip), prev.back_home, True
+                    prev = chain[k - 1]            # last appointment of the previous tour: the car is back home after it
+                    start, earliest, guess = prev.home_soc, prev.back_home, True
                 out[id(it)] = chargeview.estimate_view(target, start, it.ready_by, capacity, self.cfg, state, earliest, guess)
             # later appointments (outside the chain window) are not planned yet: estimate each on its own, car back at the reserve
             for it in ev.items:
@@ -514,6 +516,10 @@ class Runner:
             res["notices"].append(entry)
 
 
+def _r1(x):
+    return None if x is None else round(x, 1)
+
+
 def _item_dict(i, charge_est=None) -> dict:
     return {
         "charge_est": charge_est,
@@ -529,5 +535,12 @@ def _item_dict(i, charge_est=None) -> dict:
         "estimated": bool(i.route and i.route.estimated),
         "temp_c": i.temp_c, "kwh100": i.kwh100,
         "need_soc": None if i.need_soc is None else round(i.need_soc, 1),
-        "ready_by": _iso(i.ready_by), "target_alone": i.target_alone, "target_chain": i.target_chain,
+        "ready_by": _iso(i.ready_by), "target_alone": i.target_alone,
+        "target_chain": None if i.target_chain is None else round(i.target_chain, 1),
+        "tour_size": i.tour_size, "tour_km": None if i.tour_km is None else round(i.tour_km, 1),
+        "tour_out_soc": _r1(i.tour_out_soc), "tour_legs_soc": [_r1(x) for x in i.tour_legs_soc], "tour_back_soc": _r1(i.tour_back_soc),
+        "leg_from": i.leg_from or None, "leg_in_soc": _r1(i.leg_in_soc), "leg_home_soc": _r1(i.leg_home_soc),
+        "leg_in_km": None if not i.leg_in else round(i.leg_in.distance_km, 1),
+        "leg_in_min": None if not i.leg_in else round(i.leg_in.duration_min),
+        "arrival_soc": _r1(i.arrival_soc),
     }

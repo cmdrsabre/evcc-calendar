@@ -136,6 +136,7 @@ button, select, input { font: inherit; color: inherit; }
 .seg.reserve { background: var(--reserve); }
 .seg.back { background: var(--back); }
 .seg.out { background: var(--out); }
+.seg.leg { background: color-mix(in srgb, var(--out) 55%, var(--back)); }
 .seg.manual { background: repeating-linear-gradient(135deg, var(--out) 0 6px, color-mix(in srgb, var(--out) 55%, var(--track)) 6px 12px); }
 .fill { display: block; height: 100%; width: var(--w, 0%); background: linear-gradient(90deg, var(--out), var(--back)); border-radius: 8px 0 0 8px; transition: width .6s cubic-bezier(.2, .8, .2, 1); }
 .flag { position: absolute; top: -5px; bottom: -5px; left: var(--x, 0%); width: 3px; margin-left: -1.5px; background: var(--ink); border-radius: 2px; z-index: 2; }
@@ -176,7 +177,7 @@ button, select, input { font: inherit; color: inherit; }
 .charge { display: grid; gap: .5rem; padding-top: .9rem; }
 .legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .88rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .legend i { display: inline-block; width: .7em; height: .7em; border-radius: 2px; margin-right: .35em; }
-.legend .l-out i { background: var(--out); } .legend .l-back i { background: var(--back); } .legend .l-reserve i { background: var(--reserve); }
+.legend .l-out i { background: var(--out); } .legend .l-back i { background: var(--back); } .legend .l-reserve i { background: var(--reserve); } .legend .l-leg i { background: color-mix(in srgb, var(--out) 55%, var(--back)); }
 .legend b { color: var(--ink); font-weight: 650; }
 .ready { display: inline-flex; align-items: center; gap: .4em; font-size: .92rem; font-weight: 550; }
 

@@ -17,6 +17,11 @@ def round_trip_need_soc(one_way_km: float, kwh100: float, capacity_kwh: float) -
     return 2.0 * one_way_km * kwh100 / 100.0 / capacity_kwh * 100.0
 
 
+def one_way_need_soc(km: float, kwh100: float, capacity_kwh: float) -> float:
+    """Need for a single leg in percentage points of state of charge."""
+    return km * kwh100 / 100.0 / capacity_kwh * 100.0
+
+
 def ceil5(x: float) -> int:
     return int(math.ceil(round(x, 6) / 5.0)) * 5
 
