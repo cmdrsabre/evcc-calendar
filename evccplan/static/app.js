@@ -588,8 +588,10 @@
     c.meta.replaceChildren();
     const where = it.place || it.location;
     if (where) { const s = el('span', null, icon('pin'), where); s.title = it.location || ''; c.meta.append(s); }
-    if (it.km != null) c.meta.append(el('span', null, icon('route'), t(it.estimated ? 'ui.card.km_est' : 'ui.card.km', { km: num(it.km), min: it.drive_min })));
+    if (it.leg_in_km != null) c.meta.append(el('span', null, icon('route'), t('ui.card.km_leg', { km: num(it.leg_in_km), from: it.leg_from, min: it.leg_in_min })));
+    else if (it.km != null) c.meta.append(el('span', null, icon('route'), t(it.estimated ? 'ui.card.km_est' : 'ui.card.km', { km: num(it.km), min: it.drive_min })));
     if (it.kwh100 != null) c.meta.append(el('span', null, icon('temp'), it.temp_c == null ? t('ui.card.temp_unknown_kwh', { kwh: num(it.kwh100) }) : t('ui.card.temp_kwh', { temp: num(it.temp_c), kwh: num(it.kwh100) })));
+    if (it.tour_size > 1) c.meta.append(el('span', null, icon('route'), t('ui.card.tour', { n: it.tour_size, km: num(it.tour_km) })));
     c.meta.hidden = !c.meta.children.length;
 
     // Charge bar
@@ -604,16 +606,20 @@
         seg('manual', T);
         c.legend.append(el('span', null, t('ui.card.manual_target')));
       } else {
-        let need = it.need_soc;
-        const free = T - need;
+        // Tour head: there, legs between the appointments, back; follower: its leg (and the way home when it is the last one)
+        const isLeg = it.leg_in_soc != null;
+        const parts = isLeg ? [['out', 'l-leg', t('ui.card.leg_between'), it.leg_in_soc]] : [['out', 'l-out', t('ui.card.leg_out'), it.tour_out_soc != null ? it.tour_out_soc : it.need_soc / 2]];
+        if (it.tour_legs_soc && it.tour_legs_soc.length) parts.push(['leg', 'l-leg', t('ui.card.leg_between'), it.tour_legs_soc.reduce((a, b) => a + b, 0)]);
+        const home = isLeg ? it.leg_home_soc : (it.tour_back_soc != null ? it.tour_back_soc : it.need_soc / 2);
+        if (home != null) parts.push(['back', 'l-back', t('ui.card.leg_back'), home]);
+        let used = parts.reduce((a, p) => a + p[3], 0);
+        const free = T - used;
         short = free < 0;
-        if (short) need = T;
-        seg('out', need / 2);                       // left to right in the order the energy is used up: there, back, reserve
-        seg('back', need / 2);
-        seg('reserve', Math.max(0, T - need));
+        const scale = short ? T / used : 1;            // too low a target: squeeze the trip into the bar
+        for (const p of parts) seg(p[0], p[3] * scale);
+        seg('reserve', Math.max(0, free));
         const li = (cls, label, v) => { const s = el('span', cls, el('i'), label + ' '); s.append(el('b', null, num(v) + ' %')); c.legend.append(s); };
-        li('l-out', t('ui.card.leg_out'), it.need_soc / 2);
-        li('l-back', t('ui.card.leg_back'), it.need_soc / 2);
+        for (const p of parts) li(p[1], p[2], p[3]);
         li('l-reserve', t('ui.card.leg_reserve'), Math.max(0, free));
       }
       c.flag.style.setProperty('--x', T + '%');

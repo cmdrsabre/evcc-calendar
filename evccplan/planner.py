@@ -13,10 +13,12 @@ from zoneinfo import ZoneInfo
 
 from . import calc, i18n
 from .classify import classify
+from .clients import straight_line_route
 from .models import Desired, Evaluation, Item, Mode, Notice, Override, Route, override_key
 
 Resolver = Callable[[object], tuple]          # Event -> (Route|None, error text|None, place name)
 TempAt = Callable[[datetime], Optional[float]]
+Leg = Callable[[tuple, tuple], Route]         # (from, to) coordinates -> Route
 
 
 def floor5min(dt: datetime) -> datetime:
@@ -38,8 +40,9 @@ def _fmt(dt: datetime, tz: str) -> str:
 
 
 def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: float,
-             resolve: Resolver, temp_at: TempAt, overrides: Optional[dict] = None) -> Evaluation:
-    """overrides: {override_key(event): Override} from the UI."""
+             resolve: Resolver, temp_at: TempAt, overrides: Optional[dict] = None,
+             leg: Optional[Leg] = None) -> Evaluation:
+    """overrides: {override_key(event): Override} from the UI. leg: routes between two appointments (tours)."""
     T = _translator(getattr(cfg, "language", "en"))
     ev = Evaluation()
     notices = ev.notices
@@ -138,7 +141,7 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
         ev.skipped_reason = T("planner.no_plannable")
         return ev
 
-    # 3. work backwards: required charge level at departure for each event.
+    # 3. group the chain into units: a tour (appointments driven one after the other without going home) or a single appointment.
     #    A given target applies as-is; without computed demand, (target - reserve) counts as driving demand.
     def fixed(it):
         return it.override.target if it.override and it.override.target is not None else None
@@ -146,20 +149,71 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
     def trip_need(it):
         return it.need_soc if it.need_soc is not None else max(0.0, fixed(it) - cfg.reserve_soc)
 
-    req = [0.0] * len(chain)
-    for k in range(len(chain) - 1, -1, -1):
-        if fixed(chain[k]) is not None:
-            req[k] = float(fixed(chain[k]))
+    leg = leg or straight_line_route
+
+    def link(prev, it) -> bool:
+        """Drive directly from prev to it? Yes when there is no time to go home, or the charge gained at home in the gap is
+        worth less than the detour (back home + out again - direct leg)."""
+        if (prev.route is None or it.route is None or prev.route.dest is None or it.route.dest is None
+                or prev.manual or it.manual or prev.need_soc is None or it.need_soc is None or fixed(it) is not None):
+            return False
+        try:
+            r = leg(prev.route.dest, it.route.dest)
+        except Exception:
+            r = straight_line_route(prev.route.dest, it.route.dest)
+        leg_soc = calc.one_way_need_soc(r.distance_km, it.kwh100, capacity_kwh)
+        gap_h = (it.ready_by - prev.back_home).total_seconds() / 3600.0
+        gain = calc.charge_gain_soc(gap_h, capacity_kwh, cfg.charge_power_kw, cfg.charge_loss_margin)
+        if gap_h > 0 and gain >= prev.need_soc / 2 + it.need_soc / 2 - leg_soc:
+            return False
+        it.leg_in, it.leg_in_soc, it.leg_from = r, leg_soc, prev.event.title
+        return True
+
+    units: list = []
+    for it in chain:
+        if units and link(units[-1][-1], it):
+            units[-1].append(it)
+        else:
+            units.append([it])
+
+    def unit_need(u):
+        if len(u) == 1:
+            return trip_need(u[0])
+        return u[0].need_soc / 2 + sum(i.leg_in_soc for i in u[1:]) + u[-1].need_soc / 2
+
+    # 4. work backwards: required charge level at departure for each unit
+    req = [0.0] * len(units)
+    for k in range(len(units) - 1, -1, -1):
+        head = units[k][0]
+        if fixed(head) is not None:
+            req[k] = float(fixed(head))
             continue
-        base = chain[k].need_soc + cfg.reserve_soc
-        if k == len(chain) - 1:
+        base = unit_need(units[k]) + cfg.reserve_soc
+        if k == len(units) - 1:
             req[k] = base
         else:
-            gap_h = (chain[k + 1].ready_by - chain[k].back_home).total_seconds() / 3600.0
+            gap_h = (units[k + 1][0].ready_by - units[k][-1].back_home).total_seconds() / 3600.0
             gain = calc.charge_gain_soc(gap_h, capacity_kwh, cfg.charge_power_kw, cfg.charge_loss_margin)
-            req[k] = max(base, req[k + 1] - gain + trip_need(chain[k]))
-    for k, it in enumerate(chain):
-        it.target_chain = int(fixed(it)) if fixed(it) is not None else min(100, calc.ceil5(req[k]))
+            req[k] = max(base, req[k + 1] - gain + unit_need(units[k]))
+    for k, u in enumerate(units):
+        head = u[0]
+        head.target_chain = int(fixed(head)) if fixed(head) is not None else min(100, calc.ceil5(req[k]))
+        home = max(0.0, head.target_chain - unit_need(u))
+        for i in u:
+            i.home_soc = home
+        if len(u) == 1:
+            continue
+        head.tour_size = len(u)
+        head.tour_out_soc = head.need_soc / 2
+        head.tour_legs_soc = [i.leg_in_soc for i in u[1:]]
+        head.tour_back_soc = u[-1].need_soc / 2
+        head.tour_km = head.route.distance_km + sum(i.leg_in.distance_km for i in u[1:]) + u[-1].route.distance_km
+        level = head.target_chain - head.tour_out_soc
+        for i in u[1:]:
+            i.target_chain = level                      # level at departure from the previous appointment
+            level -= i.leg_in_soc
+            i.arrival_soc = level
+        u[-1].leg_home_soc = u[-1].need_soc / 2
 
     first = chain[0]
     soc = first.target_chain
@@ -183,7 +237,10 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
     ev.desired = Desired(item=first, soc=int(soc), time=first.ready_by, capped_from=capped_from, over100=over100)
     for it in chain[1:]:
         it.status = "verkettet"
-        it.detail = T("planner.chained", soc=it.target_chain)
+        if it.leg_from:
+            it.detail = T("planner.tour_leg", prev=it.leg_from, soc=max(0, round(it.arrival_soc)))
+        else:
+            it.detail = T("planner.chained", soc=it.target_chain)
     return ev
 
 

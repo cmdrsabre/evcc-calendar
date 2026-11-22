@@ -309,3 +309,68 @@ def test_chain_respects_fixed_target_of_later_event():
     r = run_ov([a, b], {"a": Route(45, 50), "b": Route(45, 50)}, {override_key(b): Override(None, 100)})
     assert r.items[1].target_chain == 100
     assert r.items[0].target_chain > r.items[0].target_alone
+
+
+# ------------------------------------------------------------------ Tours (direct drive between consecutive appointments)
+def rt(km, mn, dest):
+    return Route(km, mn, dest=dest)
+
+
+def run_tour(events, routes, legs, c=None, **kw):
+    """legs: {(dest_a, dest_b): Route} between two destinations."""
+    c = c or cfg()
+    return planner.evaluate(events, kw.get("now", NOW), c, 54, 30, resolver(routes), lambda dt: 12.0,
+                            leg=lambda a, b: legs[(a, b)])
+
+
+A, B, C = (52.0, 13.0), (52.1, 13.1), (52.2, 13.2)
+
+
+def test_back_to_back_appointments_form_a_tour_and_need_far_less_than_separate_trips():
+    d = datetime(2026, 10, 13, 11, 0, tzinfo=UTC)
+    evs = [ev("a", "Uni", d), ev("b", "Uni", d + timedelta(hours=1)), ev("c", "Uni", d + timedelta(hours=2))]
+    routes = {"a": rt(48, 54, A), "b": rt(48, 54, B), "c": rt(47, 56, C)}
+    legs = {(A, B): Route(6, 12), (B, C): Route(6, 12)}
+    r = run_tour(evs, routes, legs)
+    a, b, c = r.items
+    assert (a.tour_size, b.leg_from, c.leg_from) == (3, "Uni", "Uni")
+    assert a.tour_km == pytest.approx(48 + 6 + 6 + 47)
+    assert a.target_chain <= 70                                   # not 100 (+ warning) as with three round trips
+    assert r.desired.soc == a.target_chain and not r.desired.over100
+    assert b.status == c.status == "verkettet"
+    assert c.leg_home_soc is not None and b.leg_home_soc is None
+    assert b.arrival_soc < b.target_chain and c.arrival_soc < b.arrival_soc
+    assert b.home_soc == c.home_soc == a.home_soc
+
+
+def test_long_gap_goes_via_home_and_is_not_a_tour():
+    a = ev("a", "Uni", datetime(2026, 10, 13, 8, 0, tzinfo=UTC), hours=1)
+    b = ev("b", "Uni", datetime(2026, 10, 13, 13, 0, tzinfo=UTC), hours=1)        # ~2.5 h at home: more charged than the detour costs
+    routes = {"a": rt(45, 50, A), "b": rt(45, 50, B)}
+    r = run_tour([a, b], routes, {(A, B): Route(40, 45)})
+    assert r.items[0].tour_size == 1 and r.items[1].leg_from == ""
+    assert r.items[1].status == "verkettet"
+
+
+def test_short_positive_gap_with_big_detour_drives_directly():
+    a = ev("a", "Uni", datetime(2026, 10, 13, 8, 0, tzinfo=UTC), hours=1)
+    b = ev("b", "Uni", datetime(2026, 10, 13, 11, 40, tzinfo=UTC), hours=1)       # little time at home
+    routes = {"a": rt(45, 50, A), "b": rt(45, 50, B)}
+    r = run_tour([a, b], routes, {(A, B): Route(3, 6)})
+    assert r.items[0].tour_size == 2 and r.items[1].leg_from == "Uni"
+
+
+def test_fixed_target_on_follower_breaks_the_tour():
+    d = datetime(2026, 10, 13, 11, 0, tzinfo=UTC)
+    a, b = ev("a", "Uni", d), ev("b", "Uni", d + timedelta(hours=1))
+    routes = {"a": rt(45, 50, A), "b": rt(45, 50, B)}
+    r = planner.evaluate([a, b], NOW, cfg(), 54, 30, resolver(routes), lambda dt: 12.0,
+                         {override_key(b): Override(None, 80)}, leg=lambda x, y: Route(5, 8))
+    assert r.items[0].tour_size == 1 and r.items[1].leg_from == ""
+    assert r.items[1].target_chain == 80
+
+
+def test_routes_without_destination_are_never_a_tour():
+    d = datetime(2026, 10, 13, 11, 0, tzinfo=UTC)
+    r = run([ev("a", "Uni", d), ev("b", "Uni", d + timedelta(hours=1))], {"a": Route(45, 50), "b": Route(45, 50)})
+    assert r.items[0].tour_size == 1 and r.items[1].leg_from == ""

@@ -301,6 +301,8 @@ def estimate_view(target: float, start_soc: float, ready_by: datetime, capacity:
     start = ready_by - timedelta(hours=need_h)
     if earliest and start < earliest:
         start = earliest
+    if start >= ready_by:
+        return None                                   # no time left to charge: no window that ends before it starts
     price, currency, source = price_of(state, [(start, ready_by)])
     if source == "grid":
         fc = _mean_price(_rates((state.get("forecast") or {}).get("grid") if isinstance(state.get("forecast"), dict) else None),
