@@ -60,6 +60,12 @@ Edit `config.yaml` (Docker/Unraid: in the data folder). The minimum:
 - `language: de` for German (default `en`); `rules` for title words like car/train
 
 Everything else has defaults, most values can also be changed in the UI under Settings.
+
+### Raise the charge limit automatically
+If the charge limit set in the car is below `vehicle_limit_min`, the plan cannot be reached. With `ha.charge_limit.entity` (a `number` or `input_number` entity of your car integration, e.g. `number.ioniq_5_ac_charging_limit`) the service sets it to `ha.charge_limit.value` (default 100, range 50 to 100) via Home Assistant, once per plan. The switch `auto` (default `true`) can also be changed in the UI under Settings once an entity is configured.
+- Confirmation comes from evcc (`vehicleLimitSoc`), not from the Home Assistant entity: cloud-based vehicle integrations often need 10 to 60 minutes, and the HA Bluelink integration polls only about every 2 hours.
+- If the limit is still too low after 3 hours, it is set once more; after that you get a push that it has to be changed by hand.
+- In dry-run mode nothing is set; the warning says what would happen.
 Go live only after the dry run looks right for a few days: set `dry_run: false` in `config.yaml` and restart.
 Only **one** instance may run live.
 

@@ -97,6 +97,7 @@ class Item:
     tour_back_soc: Optional[float] = None   # head only: drive home after the last appointment
     tour_km: Optional[float] = None         # head only: total distance of the tour
     home_soc: Optional[float] = None        # expected state of charge when the unit (tour/appointment) is back home
+    slack_min: float = 0.0           # charge buffer planned into ready_by (the real latest time is plan time + slack)
 
 
 @dataclass
@@ -106,6 +107,7 @@ class Desired:
     time: datetime
     capped_from: Optional[int] = None
     over100: bool = False
+    slack_min: float = 0.0
 
 
 @dataclass

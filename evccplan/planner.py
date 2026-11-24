@@ -104,6 +104,7 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
                 it.detail = T("planner.estimated_route")
         # charge buffer: evcc tends to finish a few minutes late, more so when cold (known temperature below the threshold)
         extra = cfg.charge_buffer_min + (cfg.cold_buffer_min if it.temp_c is not None and it.temp_c < cfg.temp_threshold_c else 0.0)
+        it.slack_min = extra
         it.ready_by = floor5min(e.start - drive - timedelta(minutes=cfg.time_buffer_min + extra))
         it.back_home = e.end + drive
         if it.ready_by <= now:
@@ -234,7 +235,8 @@ def evaluate(events: list, now: datetime, cfg, capacity_kwh: float, min_soc: flo
         ev.skipped_reason = first.detail
         return ev
     first.status = "geplant"
-    ev.desired = Desired(item=first, soc=int(soc), time=first.ready_by, capped_from=capped_from, over100=over100)
+    ev.desired = Desired(item=first, soc=int(soc), time=first.ready_by, capped_from=capped_from, over100=over100,
+                          slack_min=first.slack_min)
     for it in chain[1:]:
         it.status = "verkettet"
         if it.leg_from:

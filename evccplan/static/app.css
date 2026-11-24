@@ -295,3 +295,8 @@ a.btn { text-decoration: none; color: inherit; }
 .foot a { color: var(--muted); }
 
 .filter { margin: 0 0 .8rem; font-size: .9rem; }
+.matrix-wrap { overflow-x: auto; margin-bottom: 1rem; }
+.matrix { border-collapse: collapse; width: 100%; }
+.matrix th, .matrix td { padding: .5em .6em; border-bottom: 1px solid var(--line); text-align: center; }
+.matrix tbody th { text-align: left; font-weight: 600; }
+.matrix small { display: block; color: var(--muted); font-weight: 400; }

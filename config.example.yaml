@@ -16,6 +16,10 @@ ha:
     error:   [notify.mobile_app_phone, notify.telegram_bot,
               notify.echo_announce]                      # Alexa announcement only for errors
   weather: weather.forecast_home      # fallback temperature source
+  # charge_limit:                         # raise the car's charge limit via HA when it is below vehicle_limit_min
+  #   entity: number.ioniq_5_ac_charging_limit
+  #   value: 100
+  #   auto: true
 
 evcc:
   url: http://evcc.local:7070

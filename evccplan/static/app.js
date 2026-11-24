@@ -65,6 +65,7 @@
     if (!$('view-main').hidden) {
       if (S.tab === 'history') loadHistory();
       if (S.tab === 'settings') loadSettings();
+      if (S.tab === 'notify') loadNotify();
     }
   }
 
@@ -268,7 +269,11 @@
     st.id = 'status-chip';
     facts.append(st);
     setStatusChip();
-    if (v.car_limit != null) chip(null, t('ui.fact.car_limit', { n: v.car_limit }));
+    if (v.car_limit != null) {
+      const fixing = v.limit_fix && v.limit_fix.state === 'pending';
+      const lc = el('li', fixing ? 'chip stalled' : 'chip', t('ui.fact.car_limit', { n: v.car_limit }) + (fixing ? ' · ' + t('ui.fact.limit_fixing') : ''));
+      facts.append(lc);
+    }
     if (v.min_soc != null) chip(null, t('ui.fact.min_soc', { n: v.min_soc }));
     if (v.mode) chip(null, t('ui.fact.evcc_mode', { mode: v.mode }));
 
@@ -695,8 +700,10 @@
     $('tab-plan').hidden = name !== 'plan';
     $('tab-history').hidden = name !== 'history';
     $('tab-settings').hidden = name !== 'settings';
+    $('tab-notify').hidden = name !== 'notify';
     if (name === 'history') loadHistory();
     if (name === 'settings') loadSettings();
+    if (name === 'notify') loadNotify();
   }
 
   // ------------------------------------------------------------ History
@@ -749,8 +756,9 @@
   // ------------------------------------------------------------ Settings
   const GROUPS = [
     ['consumption', [['warm', 'kwh100'], ['cold', 'kwh100'], ['temp_threshold_c', 'c']]],
-    ['charging', [['reserve_soc', 'pct'], ['unclear_cap_soc', 'pct'], ['charge_power_kw', 'kw'], ['charge_loss_margin', ''], ['vehicle_limit_min', 'pct']]],
+    ['charging', [['reserve_soc', 'pct'], ['unclear_cap_soc', 'pct'], ['charge_power_kw', 'kw'], ['charge_loss_margin', ''], ['vehicle_limit_min', 'pct'], ['limit_auto', '']]],
     ['trips', [['min_car_km', 'km'], ['manual_drive_min', 'min'], ['time_buffer_min', 'min'], ['charge_buffer_min', 'min'], ['cold_buffer_min', 'min'], ['chain_window_h', 'h']]],
+    ['planning', [['horizon_days', 'days'], ['run_every_min', 'min'], ['ors_min_confidence', '']]],
     ['live', [['live_poll_s', 's']]],
   ];
 
@@ -776,12 +784,17 @@
       fields.forEach(([key, unitKey]) => {
         const label = t('ui.set.' + key), unit = unitKey ? t('ui.unit.' + unitKey) : '';
         const lim = data.limits[key];
+        if (!lim || (lim.bool && key === 'limit_auto' && !data.limit_entity)) return;   // needs ha.charge_limit in config.yaml
         const inp = el('input');
-        inp.type = 'number';
         inp.id = 'set-' + key;
-        inp.min = lim.min; inp.max = lim.max;
-        inp.step = lim.int ? '1' : 'any';
-        inp.required = true;
+        if (lim.bool) {
+          inp.type = 'checkbox';
+        } else {
+          inp.type = 'number';
+          inp.min = lim.min; inp.max = lim.max;
+          inp.step = lim.int ? '1' : 'any';
+          inp.required = true;
+        }
         S.inputs[key] = inp;
         const lab = el('label', 'field row', el('span', null, label), el('span', 'inp', inp, el('em', null, unit || '')));
         fs.append(lab);
@@ -794,14 +807,14 @@
     S.settings = data;
     if (S.langSel) S.langSel.value = data.values.language || S.lang;
     for (const [key, inp] of Object.entries(S.inputs)) {
-      inp.value = String(data.values[key]);
+      if (inp.type === 'checkbox') inp.checked = data.values[key] === true;
+      else inp.value = String(data.values[key]);
       inp.parentElement.parentElement.classList.toggle('changed', data.changed.includes(key));
     }
     const ul = $('rules-list');
     ul.replaceChildren();
     data.values.rules.forEach((r) => addRuleRow(r.match, r.mode));
-    $('runs-more').addEventListener('click', () => loadHistory(true));
-  $('settings-reset').hidden = !data.changed.length;
+      $('settings-reset').hidden = !data.changed.length;
   }
 
   function addRuleRow(match, mode) {
@@ -837,8 +850,8 @@
     ev.preventDefault();
     const cur = S.settings.values, values = {};
     for (const [key, inp] of Object.entries(S.inputs)) {
-      const v = Number(inp.value);
-      if (inp.value === '' || Number.isNaN(v)) continue;
+      const v = inp.type === 'checkbox' ? inp.checked : Number(inp.value);
+      if (inp.type !== 'checkbox' && (inp.value === '' || Number.isNaN(v))) continue;
       if (v !== cur[key]) values[key] = v;
     }
     if (S.langSel && S.langSel.value && S.langSel.value !== cur.language) values.language = S.langSel.value;
@@ -877,11 +890,97 @@
     refresh();
   }
 
+  // ------------------------------------------------------------ Notifications
+  async function loadNotify() {
+    const r = await api('GET', '/api/notify');
+    if (r.status === 401) return boot();
+    if (!r.ok) return toast(r.data.error || t('ui.err.settings_load'), true);
+    renderNotify(r.data);
+  }
+
+  function renderNotify(data) {
+    S.notify = data;
+    const tbl = $('notify-matrix');
+    tbl.replaceChildren();
+    const head = el('tr', null, el('td'));
+    data.entities.forEach((e) => {
+      const test = el('button', 'link', t('ui.ntf.test'));
+      test.type = 'button';
+      test.addEventListener('click', () => testNotify(e.id));
+      const th = el('th', null, e.name, el('br'), test);
+      th.scope = 'col'; th.title = e.id;
+      head.append(th);
+    });
+    tbl.append(el('thead', null, head));
+    const body = el('tbody');
+    if (!data.entities.length) {
+      const td = el('td', 'empty', t('ui.ntf.none'));
+      td.colSpan = 2;
+      body.append(el('tr', null, td));
+    } else {
+      data.categories.forEach((c) => {
+        const th = el('th', null, t('ui.ntf.cat.' + c), el('small', null, t('ui.ntf.cat_hint.' + c)));
+        th.scope = 'row';
+        const row = el('tr', null, th);
+        data.entities.forEach((e) => {
+          const cb = el('input');
+          cb.type = 'checkbox'; cb.dataset.cat = c; cb.dataset.ent = e.id;
+          cb.checked = (data.routes[c] || []).includes(e.id);
+          cb.setAttribute('aria-label', t('ui.ntf.cat.' + c) + ' - ' + e.name);
+          row.append(el('td', null, cb));
+        });
+        body.append(row);
+      });
+    }
+    tbl.append(body);
+    $('ntf-quiet-on').checked = !!data.quiet.enabled;
+    $('ntf-quiet-from').value = data.quiet.from;
+    $('ntf-quiet-to').value = data.quiet.to;
+    $('ntf-min-late').value = String(data.min_late_min);
+    const he = $('notify-ha-error');
+    he.hidden = !data.ha_error;
+    he.textContent = data.ha_error || '';
+    $('notify-reset').hidden = !data.custom;
+  }
+
+  async function saveNotify(ev) {
+    ev.preventDefault();
+    const routes = {};
+    (S.notify ? S.notify.categories : []).forEach((c) => { routes[c] = []; });
+    document.querySelectorAll('#notify-matrix input[type=checkbox]').forEach((cb) => {
+      if (cb.checked) routes[cb.dataset.cat].push(cb.dataset.ent);
+    });
+    const quiet = { enabled: $('ntf-quiet-on').checked, from: $('ntf-quiet-from').value, to: $('ntf-quiet-to').value };
+    const values = { routes, quiet, min_late_min: Number($('ntf-min-late').value) };
+    const err = $('notify-error');
+    err.hidden = true;
+    const r = await api('POST', '/api/notify', { values });
+    if (!r.ok) { err.textContent = r.data.error || t('ui.err.generic'); err.hidden = false; return; }
+    renderNotify(r.data);
+    toast(t('ui.set.saved'));
+  }
+
+  async function resetNotify() {
+    const r = await api('POST', '/api/notify', { reset: true });
+    if (!r.ok) return toast(r.data.error || t('ui.err.generic'), true);
+    renderNotify(r.data);
+    toast(t('ui.set.reset_done'));
+  }
+
+  async function testNotify(id) {
+    const r = await api('POST', '/api/notify/test', { entity: id });
+    if (!r.ok) return toast(r.data.error || t('ui.err.generic'), true);
+    toast(t('ui.ntf.test_sent'));
+  }
+
   // ------------------------------------------------------------ Header buttons
   $('auth-form').addEventListener('submit', submitAuth);
   $('tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); });
   $('settings-form').addEventListener('submit', saveSettings);
   $('settings-reset').addEventListener('click', resetSettings);
+  $('runs-more').addEventListener('click', () => loadHistory(true));
+  $('notify-form').addEventListener('submit', saveNotify);
+  $('notify-reset').addEventListener('click', resetNotify);
   $('rule-add').addEventListener('click', () => addRuleRow('', 'auto').focus());
   try { S.showAll = localStorage.getItem('showAll') === '1'; } catch (e) { /* storage not available */ }
   $('btn-filter').addEventListener('click', () => {

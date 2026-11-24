@@ -82,6 +82,7 @@
     <button type="button" data-tab="plan" aria-current="page" data-i18n="ui.tab.plan"></button>
     <button type="button" data-tab="history" data-i18n="ui.tab.history"></button>
     <button type="button" data-tab="settings" data-i18n="ui.tab.settings"></button>
+    <button type="button" data-tab="notify" data-i18n="ui.tab.notify"></button>
   </nav>
 
   <div class="layout" id="tab-plan">
@@ -138,6 +139,29 @@
       <div class="form-actions">
         <button class="btn primary" id="settings-save" type="submit" data-i18n="ui.set.save"></button>
         <button class="btn ghost" id="settings-reset" type="button" data-i18n="ui.set.reset"></button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel" id="tab-notify" data-i18n-aria-label="ui.tab.notify" hidden>
+    <h2 data-i18n="ui.tab.notify"></h2>
+    <p class="hint" data-i18n-rich="ui.ntf.hint"></p>
+    <p class="form-error" id="notify-ha-error" hidden></p>
+    <form id="notify-form" autocomplete="off">
+      <div class="matrix-wrap"><table class="matrix" id="notify-matrix"></table></div>
+      <fieldset class="group"><legend data-i18n="ui.ntf.quiet"></legend>
+        <label class="field row"><span data-i18n="ui.ntf.quiet_enabled"></span><span class="inp"><input type="checkbox" id="ntf-quiet-on"></span></label>
+        <label class="field row"><span data-i18n="ui.ntf.quiet_from"></span><span class="inp"><input type="time" id="ntf-quiet-from" required></span></label>
+        <label class="field row"><span data-i18n="ui.ntf.quiet_to"></span><span class="inp"><input type="time" id="ntf-quiet-to" required></span></label>
+        <p class="hint" data-i18n="ui.ntf.quiet_hint"></p>
+      </fieldset>
+      <fieldset class="group"><legend data-i18n="ui.ntf.late"></legend>
+        <label class="field row"><span data-i18n="ui.ntf.min_late"></span><span class="inp"><input type="number" id="ntf-min-late" min="0" max="60" step="1" required><em data-i18n="ui.unit.min"></em></span></label>
+      </fieldset>
+      <p class="form-error" id="notify-error" role="alert" hidden></p>
+      <div class="form-actions">
+        <button class="btn primary" type="submit" data-i18n="ui.set.save"></button>
+        <button class="btn ghost" id="notify-reset" type="button" data-i18n="ui.ntf.reset"></button>
       </div>
     </form>
   </section>

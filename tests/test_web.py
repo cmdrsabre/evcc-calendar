@@ -309,3 +309,34 @@ def test_history_pagination(web):
     page = c.call("GET", "/api/history?limit=2&offset=1")[1]
     assert page["runs"] == full["runs"][1:3] and page["total"] == full["total"]
     assert c.call("GET", "/api/history?limit=x")[0] == 400
+
+
+# ------------------------------------------------------------ notification routing
+def test_notify_api_needs_login_validates_and_resets(web):
+    c, runner, srv, store, _ = web
+    assert c.call("GET", "/api/notify")[0] == 401
+    assert c.call("POST", "/api/notify", {"reset": True})[0] == 401
+    setup_login(c)
+    code, d, _ = c.call("GET", "/api/notify")
+    assert code == 200 and d["custom"] is False and d["ha_error"] is None
+    assert {"notify.a", "notify.extra"} <= {e["id"] for e in d["entities"]}
+    assert d["routes"]["outage"] == ["notify.a", "notify.b", "notify.c"]       # derived from the YAML targets
+    assert c.call("POST", "/api/notify", {"values": {"routes": {"plan": ["notify.unknown"]}}})[0] == 400
+    assert c.call("POST", "/api/notify", {"values": {"quiet": {"enabled": True, "from": "25:00", "to": "07:00"}}})[0] == 400
+    code, d, _ = c.call("POST", "/api/notify", {"values": {"routes": {"plan": ["notify.extra"]}, "min_late_min": 5,
+                                                          "quiet": {"enabled": True, "from": "22:00", "to": "06:30"}}})
+    assert code == 200 and d["custom"] and d["routes"]["plan"] == ["notify.extra"]
+    assert d["min_late_min"] == 5 and d["quiet"]["to"] == "06:30" and runner.cfg.notify_min_late_min == 5
+    code, d, _ = c.call("POST", "/api/notify", {"reset": True})
+    assert code == 200 and d["custom"] is False and d["routes"]["outage"] == ["notify.a", "notify.b", "notify.c"]
+    assert runner.cfg.notify_min_late_min == 2.0
+
+
+def test_notify_test_calls_fake_ha_and_rejects_unknown_entity(web):
+    c, runner, srv, store, _ = web
+    setup_login(c)
+    assert c.call("POST", "/api/notify/test", {"entity": "notify.nope"})[0] == 400
+    n = len(srv.notified)
+    assert c.call("POST", "/api/notify/test", {"entity": "notify.extra"})[0] == 200
+    assert len(srv.notified) == n + 1 and srv.targets[-1] == ["notify.extra"]
+    assert c.call("POST", "/api/notify/test", {"entity": "notify.extra"})[0] == 429       # rate limit

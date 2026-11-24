@@ -132,6 +132,7 @@ def test_charge_buffer_and_cold_extra():
     cold = run([e], {"a": Route(47.4, 52)}, cfg(charge_buffer_min=3, cold_buffer_min=12), temp=5.0)
     assert warm.desired.time == datetime(2026, 10, 13, 7, 15, tzinfo=UTC)   # 07:18 - 3 -> 07:15
     assert cold.desired.time == datetime(2026, 10, 13, 7, 0, tzinfo=UTC)    # 07:18 - 15 -> 07:03 -> 07:00
+    assert warm.desired.slack_min == 3 and cold.desired.slack_min == 15     # remembered for the lateness checks
 
 
 def test_overlap_deadline_follows_the_trip_that_leaves_first():

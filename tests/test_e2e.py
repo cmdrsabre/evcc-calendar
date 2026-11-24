@@ -2,7 +2,7 @@
 import json
 import threading
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
@@ -10,7 +10,7 @@ import pytest
 from evccplan.classify import Rule
 from evccplan.clients import ApiError, EvccClient, HAClient, forecast_temperature
 from evccplan.config import Config, from_dict, problems
-from evccplan.models import Mode, Place, Route
+from evccplan.models import Mode, Notice, Place, Route
 from evccplan.runner import Runner
 from evccplan.store import Store
 
@@ -121,6 +121,10 @@ class Server:
                                         "location": loc})
                     out.append({"summary": "Ganztag", "start": {"date": "2026-10-12"}, "end": {"date": "2026-10-13"}})
                     return self._reply(200, out)
+                if u.path == "/api/states":
+                    return self._reply(200, [{"entity_id": e, "attributes": {"friendly_name": "Dev " + e}}
+                                             for e in ("notify.a", "notify.b", "notify.c", "notify.extra")]
+                                      + [{"entity_id": "sensor.x"}])
                 if u.path.startswith("/api/states/weather."):
                     return self._reply(200, {"attributes": {"temperature": 11.8}})
                 self._reply(404)
@@ -195,7 +199,7 @@ def test_real_week_live_run_sets_expected_plan(env):
     d = res["desired"]
     assert d["soc"] == 45 and d["time"] == "2026-10-12T08:40:00Z"
     assert srv.calls == [("POST", "/api/vehicles/db%3A1/plan/soc/45/2026-10-12T08%3A40%3A00Z")]
-    assert store.get("last_set") == {"soc": 45, "time": "2026-10-12T08:40:00Z"}
+    assert store.get("last_set") == {"soc": 45, "time": "2026-10-12T08:40:00Z", "slack_min": 0.0}
     # the MVZ address was resolved via the pre-filter, not via the town center
     assert "Lindenstraße 63, 14974 Musterstadt" in ors.geocodes
     assert st["Lisa Uni@2026-10-14"] in ("verkettet", "spaeter")
@@ -516,10 +520,49 @@ def test_overrun_is_reported_once(env):
                "planProjectedEnd": "2026-10-12T09:10:00Z"})
     srv.notified.clear()
     runner.run()
-    assert any("nicht rechtzeitig erreichbar" in m and "30 Min. Verspätung" in m for m in srv.notified)
+    assert any("nicht rechtzeitig erreichbar" in m and "30 Min. später" in m for m in srv.notified)
     srv.notified.clear()
     runner.run()
     assert not any("nicht rechtzeitig" in m for m in srv.notified)
+
+
+def _overrun_state(srv, minutes_after_plan):
+    plan = datetime(2026, 10, 12, 8, 40, tzinfo=timezone.utc)
+    srv.state["loadpoints"][0].update({
+        "effectivePlanTime": "2026-10-12T08:40:00Z", "effectivePlanSoc": 45, "planOverrun": 60 * 10**9,
+        "planProjectedEnd": (plan + timedelta(minutes=minutes_after_plan)).strftime("%Y-%m-%dT%H:%M:%SZ")})
+    srv.notified.clear()
+
+
+def test_overrun_within_the_charge_buffer_is_not_reported(env):
+    srv, cfg, runner, state, ors, store = env
+    cfg.charge_buffer_min = 3
+    runner.run()
+    _overrun_state(srv, 2)                                             # 2 min after the plan time, buffer 3
+    runner.run()
+    assert not any("nicht rechtzeitig" in m for m in srv.notified)
+
+
+def test_overrun_beyond_the_buffer_reports_only_the_excess(env):
+    srv, cfg, runner, state, ors, store = env
+    cfg.charge_buffer_min = 3
+    runner.run()
+    _overrun_state(srv, 10)                                            # 10 min after the plan time, buffer 3 -> 7 late
+    runner.run()
+    assert any("nicht rechtzeitig" in m and "7 Min. später" in m for m in srv.notified)
+
+
+def test_overrun_uses_the_buffer_stored_with_the_plan(env):
+    srv, cfg, runner, state, ors, store = env
+    store.put("last_set", {"soc": 45, "time": "2026-10-12T08:40:00Z", "slack_min": 15})   # e.g. cold buffer applied
+    _overrun_state(srv, 10)
+    lp = srv.state["loadpoints"][0]
+    notices = []
+    runner._check_overrun(lp, notices)                                 # 10 min after the plan time, 15 min buffer
+    assert notices == []
+    store.put("last_set", {"soc": 45, "time": "2026-10-12T08:40:00Z", "slack_min": 3})
+    runner._check_overrun(lp, notices)
+    assert len(notices) == 1 and "7 Min. später" in notices[0].text
 
 
 def session(sid, finished, **kw):
@@ -626,6 +669,18 @@ def test_watch_too_late_warns_once_with_run_key(env):
     assert len([m for m in srv.notified if "nicht rechtzeitig" in m]) == 1
 
 
+def test_watch_lateness_is_measured_beyond_the_charge_buffer(env):
+    srv, cfg, runner, state, ors, store = env
+    cfg.charge_buffer_min = 3
+    # evcc finishes 2 min after the deadline: inside the buffer
+    runner.watch(_view(state="charging", soc=20, start="2026-10-12T05:00:00Z", end="2026-10-12T08:02:00Z", estimated=False,
+                       deadline="2026-10-12T08:00:00Z"))
+    assert not any("nicht rechtzeitig" in m for m in srv.notified)
+    runner.watch(_view(state="charging", soc=20, start="2026-10-12T05:00:00Z", end="2026-10-12T08:20:00Z", estimated=False,
+                       deadline="2026-10-12T08:00:00Z"))
+    assert any("17 Min. später" in m for m in srv.notified)
+
+
 def test_watch_failed_push_is_retried_only_after_a_pause(env):
     srv, cfg, runner, state, ors, store = env
     calls = []
@@ -712,3 +767,31 @@ def test_telegram_target_gets_markdownv2_escaped_text():
         c._request = orig
     assert sent["notify.mobile_app_x"]["message"] == "Plan (55 %) 11.11.!"
     assert sent["notify.telegram_bot"] == {"entity_id": ["notify.telegram_bot"], "title": "A\\-B", "message": "Plan \\(55 %\\) 11\\.11\\.\\!"}
+
+
+# ------------------------------------------------------------ notification routing and quiet hours
+def test_saved_routes_send_carlimit_only_to_chosen_entity(env):
+    srv, cfg, runner, state, ors, store = env
+    runner.notifier.update({"routes": {"carlimit": ["notify.b"], "plan": ["notify.a"]}}, {"notify.a", "notify.b"})
+    srv.state["loadpoints"][0]["vehicleLimitSoc"] = 80
+    runner.run()
+    i = next(i for i, m in enumerate(srv.notified) if "Ladelimit im Auto" in m)
+    assert srv.targets[i] == ["notify.b"]
+
+
+def test_quiet_hours_hold_warning_but_not_error_and_release_later(env):
+    srv, cfg, runner, state, ors, store = env
+    runner.notifier.update({"quiet": {"enabled": True, "from": "22:00", "to": "07:00"}}, set())
+    state["now"] = datetime(2026, 10, 12, 21, 0, tzinfo=UTC)          # 23:00 local
+    srv.state["loadpoints"][0]["vehicleLimitSoc"] = 80
+    res = runner.run()
+    assert not any("Ladelimit im Auto" in m for m in srv.notified)
+    assert any("zur\u00fcckgehalten" in n["status"] for n in res["notices"])
+    assert store.get("notify_held")[0]["key"].startswith("carlimit")
+    out = {"notices": [], "problems": []}
+    runner._send(out, [Notice("evcc_down", "evcc kaputt", ttl_hours=6, level="error")], False)
+    assert any("evcc kaputt" in m for m in srv.notified)               # errors are never held back
+    state["now"] = datetime(2026, 10, 13, 5, 30, tzinfo=UTC)          # 07:30 local
+    runner.run()
+    assert len([m for m in srv.notified if "Ladelimit im Auto" in m]) == 1
+    assert store.get("notify_held") is None

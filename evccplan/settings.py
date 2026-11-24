@@ -21,7 +21,9 @@ FIELDS = {
     "time_buffer_min": (float, 0, 240), "charge_buffer_min": (float, 0, 60), "cold_buffer_min": (float, 0, 60), "chain_window_h": (float, 0, 48),
     "charge_power_kw": (float, 1, 50), "charge_loss_margin": (float, 0, 1),
     "vehicle_limit_min": (int, 0, 100), "live_poll_s": (int, MIN_INTERVAL_S, MAX_INTERVAL_S),
+    "horizon_days": (int, 1, 14), "run_every_min": (int, 5, 240), "ors_min_confidence": (float, 0, 1),
 }
+BOOLS = {"limit_auto"}
 MAX_RULES = 50
 _PATTERN = re.compile(r"^[\w*\- ]{1,40}$", re.UNICODE)
 
@@ -67,6 +69,10 @@ def validate(data, lang: str = "en") -> dict:
             out[k] = v
         elif k in FIELDS:
             out[k] = _number(k, v, lang)
+        elif k in BOOLS:
+            if not isinstance(v, bool):
+                raise ValueError(t(lang, "api.set_bool_expected", name=k))
+            out[k] = v
         else:
             raise ValueError(t(lang, "api.set_unknown", name=str(k)[:40]))
     return out
@@ -82,7 +88,7 @@ class Settings:
             pass                                    # damaged stored values: fall back to config.yaml
 
     def _snapshot(self) -> dict:
-        snap = {k: getattr(self.cfg, k) for k in FIELDS}
+        snap = {k: getattr(self.cfg, k) for k in (*FIELDS, *BOOLS)}
         snap["language"] = self.cfg.language
         snap["rules"] = [{"match": r.match, "mode": r.mode.value} for r in self.cfg.rules]
         return snap
@@ -114,4 +120,6 @@ class Settings:
         self._apply(self.base)
 
     def limits(self) -> dict:
-        return {k: {"min": lo, "max": hi, "int": kind is int} for k, (kind, lo, hi) in FIELDS.items()}
+        out = {k: {"min": lo, "max": hi, "int": kind is int} for k, (kind, lo, hi) in FIELDS.items()}
+        out.update({k: {"bool": True} for k in BOOLS})
+        return out
