@@ -6,7 +6,7 @@
   const SVGNS = 'http://www.w3.org/2000/svg';
   const CAR_SVG = '<svg viewBox="0 0 320 120" aria-hidden="true"><path d="M14 86c0-9 4-15 12-18l34-10c10-14 22-24 40-30 20-6 52-6 76-2 28 5 44 18 60 34l44 8c14 3 26 8 32 16 5 7 4 12 4 16H14z"/><path class="glass" d="M82 56c8-9 16-16 30-19 20-4 40-3 56 0v21H82zM178 38c14 3 26 10 38 20h-38z"/><circle class="tyre" cx="84" cy="100" r="17"/><circle class="tyre" cx="244" cy="100" r="17"/><circle class="rim" cx="84" cy="100" r="7"/><circle class="rim" cx="244" cy="100" r="7"/></svg>';
 
-  const S = { tab: 'plan', settings: null, status: null, pending: {}, cards: new Map(), sig: '', tz: 'Europe/Berlin', timer: null, liveTimer: null, fmt: null, targets: [], lang: null, dict: {}, fallback: {}, languages: [] };
+  const S = { tab: 'plan', settings: null, status: null, pending: {}, cards: new Map(), sig: '', tz: 'Europe/Berlin', timer: null, liveTimer: null, stallSince: null, fmt: null, targets: [], lang: null, dict: {}, fallback: {}, languages: [] };
 
   // ------------------------------------------------------------ Helpers
   function icon(name) {
@@ -261,7 +261,10 @@
     const facts = $('v-facts');
     facts.replaceChildren();
     const chip = (ic, txt) => facts.append(el('li', 'chip', ic ? icon(ic) : null, txt));
-    if (v.connected != null) chip('plug', t(v.connected ? 'ui.fact.connected' : 'ui.fact.disconnected'));
+    const st = el('li', 'chip');
+    st.id = 'status-chip';
+    facts.append(st);
+    setStatusChip();
     if (v.car_limit != null) chip(null, t('ui.fact.car_limit', { n: v.car_limit }));
     if (v.min_soc != null) chip(null, t('ui.fact.min_soc', { n: v.min_soc }));
     if (v.mode) chip(null, t('ui.fact.evcc_mode', { mode: v.mode }));
@@ -317,13 +320,42 @@
     S.liveTimer = setTimeout(pollLive, document.hidden ? 60000 : every);
   }
 
+  // Single status chip at the top: not plugged in / plugged in / charging / plan active but no power flowing.
+  const STALL_MS = 3 * 60000;   // evcc may need a minute or two (enable delay) before power flows
+  function setStatusChip() {
+    const chip = $('status-chip');
+    if (!chip) return;
+    const live = S.liveData && S.liveData.reachable ? S.liveData : null;
+    const lp = (live && live.loadpoint) || {};
+    const v = (S.status && S.status.vehicle) || {};
+    const connected = typeof lp.connected === 'boolean' ? lp.connected : v.connected;
+    if (connected == null) { chip.hidden = true; return; }
+    chip.hidden = false;
+    const charging = lp.charging === true;
+    const done = !!(live && live.charge && live.charge.state === 'done');
+    const wants = connected && !charging && !done && lp.plan_active === true;
+    S.stallSince = wants ? (S.stallSince || Date.now()) : null;
+    const stalled = wants && Date.now() - S.stallSince >= STALL_MS;
+    let ic = 'plug', txt, cls = 'chip';
+    if (charging) {
+      ic = 'bolt'; cls += ' charging';
+      txt = typeof lp.power_kw === 'number' ? t('ui.status.charging_kw', { kw: num(lp.power_kw) }) : t('ui.live.charging');
+    } else if (stalled) {
+      ic = 'alert'; cls += ' stalled'; txt = t('ui.status.stalled');
+    } else txt = t(connected ? 'ui.fact.connected' : 'ui.fact.disconnected');
+    if (stalled) chip.title = t('ui.status.stalled_title'); else chip.removeAttribute('title');
+    chip.className = cls;
+    chip.replaceChildren(icon(ic), txt);
+  }
+
   function renderLive(live) {
     S.liveData = live;
+    setStatusChip();
     refreshChargePanels();
     const box = $('live');
     box.hidden = false;
-    const facts = $('live-facts'), list = $('live-list'), note = $('live-note');
-    facts.replaceChildren(); list.replaceChildren();
+    const list = $('live-list'), note = $('live-note');
+    list.replaceChildren();
     note.className = 'live-note';
     box.classList.toggle('is-down', live.reachable === false);
     if (live.reachable == null) { note.textContent = t('ui.live.loading'); return; }
@@ -333,9 +365,6 @@
       return;
     }
     const lp = live.loadpoint || {}, site = live.site || {};
-    const chip = (ic, txt, cls) => facts.append(el('li', 'chip' + (cls ? ' ' + cls : ''), ic ? icon(ic) : null, txt));
-    if (typeof lp.connected === 'boolean') chip('plug', t(lp.connected ? 'ui.fact.connected' : 'ui.fact.disconnected'));
-    if (typeof lp.charging === 'boolean') chip('bolt', t(lp.charging ? 'ui.live.charging' : 'ui.live.not_charging'), lp.charging ? 'charging' : '');
     let rows = 0;
     const row = (label, value, unit, cls) => { rows++; list.append(el('div', 'live-row' + (cls ? ' ' + cls : ''), el('dt', null, label), el('dd', null, num(value) + ' ' + unit))); };
     if (typeof lp.power_kw === 'number') row(t('ui.live.power'), lp.power_kw, t('ui.unit.kw'));
@@ -346,7 +375,7 @@
     if (typeof site.pv_kw === 'number') siteRow(t('ui.live.pv'), site.pv_kw, t('ui.unit.kw'));
     if (typeof site.grid_kw === 'number') siteRow(t(site.grid_kw < 0 ? 'ui.live.grid_export' : 'ui.live.grid_import'), Math.abs(site.grid_kw), t('ui.unit.kw'));
     if (typeof site.home_kw === 'number') siteRow(t('ui.live.home'), site.home_kw, t('ui.unit.kw'));
-    if (!rows && !facts.children.length) note.textContent = t('ui.live.no_data');
+    if (!rows) note.textContent = t('ui.live.no_data');
     else if (live.time && S.fmt) note.textContent = t('ui.live.updated', { time: S.fmt.time.format(d(live.time)) });
     else note.textContent = '';
   }

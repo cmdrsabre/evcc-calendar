@@ -289,6 +289,7 @@ button, select, input { font: inherit; color: inherit; }
 .live-note { margin: 0; color: var(--muted); font-size: .85rem; }
 .live-box.is-down .live-note.is-error { color: var(--bad); font-weight: 600; }
 .chip.charging { background: color-mix(in srgb, var(--ok) 16%, var(--card)); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.chip.stalled { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 60%, var(--line)); }
 .foot { display: flex; gap: 1rem; flex-wrap: wrap; }
 .foot a { color: var(--muted); }
 

@@ -40,6 +40,12 @@ def test_parse_state_with_pv_and_grid_values():
     assert out["site"] == {"pv_kw": 4.21, "grid_kw": -2.55, "home_kw": 0.83}      # grid < 0: feeding in
 
 
+def test_parse_state_plan_active_and_enabled():
+    lp = parse_state({"loadpoints": [{"planActive": True, "enabled": False, "connected": True}]})["loadpoint"]
+    assert lp["plan_active"] is True and lp["enabled"] is False
+    assert "plan_active" not in parse_state({"loadpoints": [{"connected": True}]})["loadpoint"]
+
+
 def test_parse_state_without_pv_data_leaves_the_site_part_out():
     out = parse_state(fixture("evcc_state_nopv.json"), "db:1")
     assert out["site"] == {}
