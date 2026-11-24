@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+- Fix: the "plan not reachable in time (1–2 min late)" warning came almost daily although the charge buffer is configured. The buffer is subtracted from the plan time sent to evcc, and both lateness checks then measured against that already earlier time, so the buffer could never absorb a delay. Now a delay is only reported when evcc finishes later than plan time + the buffer that was planned in (stored with the plan, so the cold buffer counts too) and by at least `notify_min_late_min` (default 2, editable in the UI). The reported minutes are the delay beyond the buffer.
+- One status chip at the top of the vehicle box: not plugged in / plugged in / charging with power / "not charging" when evcc has an active plan but no power has flowed for 3 minutes. The Live status box no longer repeats the chips.
+- "evcc" button in the header opens the evcc web interface (`evcc.ui_url`, default `evcc.url`).
+- New tab "Notifications": choose per message type (plan set/removed, planning hints, late/earlier start, not plugged in, car charge limit, outages and errors) which Home Assistant notify entities get it, with a test button, quiet hours (info and warnings are held back, errors always go out) and the minimum lateness. Without a custom choice `ha.notify_targets` applies as before.
+- Settings tab: look-ahead days, check interval and minimum address match quality can be changed in the UI.
+- New `ha.charge_limit`: when the car's charge limit is below `vehicle_limit_min`, it is raised via Home Assistant (e.g. Bluelink `number.ioniq_5_ac_charging_limit`). The warning says so, evcc's `vehicleLimitSoc` confirms it ("now at 100 %"), otherwise there is a new attempt after 3 hours and then a final warning. Can be switched off in the UI.
+- Fix: the settings tab added one more click listener to "Show more" in the history on every load.
+
 ## 0.6.2
 - Fix: appointments that follow each other directly are now planned as a tour (home → A → B → C → home) instead of as separate round trips from home. Before, every appointment counted its own return trip and the way out again, although there was no time to drive home, so three appointments of 48 km each needed 140 % instead of about 60 %. Between two chained appointments the car drives directly when there is no time at home, or when the charge gained at home in the gap is worth less than the detour (back home + out again − direct leg). The leg between the appointments is routed from place to place (cached like the others); otherwise the old behaviour (via home, with the charge gained in the gap) applies.
 - The first card of a tour shows the whole tour in its bar (outbound, legs, return, reserve) and the tour length; the following cards show their own leg from the previous appointment and the expected charge on arrival. They get no charge window or cost, since the car does not come home in between.
