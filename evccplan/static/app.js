@@ -241,6 +241,9 @@
   }
 
   function renderTop(res) {
+    const evcc = $('btn-evcc');
+    evcc.hidden = !res.evcc_ui_url;
+    if (res.evcc_ui_url) evcc.href = res.evcc_ui_url;
     const chip = $('mode-chip');
     chip.textContent = t(res.config_dry_run ? 'ui.mode.dry' : 'ui.mode.live');
     chip.className = 'chip ' + (res.config_dry_run ? 'dry' : 'live');

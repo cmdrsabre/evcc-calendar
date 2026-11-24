@@ -56,7 +56,7 @@ Requires: Python 3.12 (3.9+ runs the tests), git.
 Edit `config.yaml` (Docker/Unraid: in the data folder). The minimum:
 - `home.address` (or `lat`/`lon`): where trips start
 - `ha.url`, `ha.calendar` (one entity or a list of calendars), `ha.notify_targets` (notify entities per level)
-- `evcc.url`, `evcc.vehicle` (name from evcc `/api/state`, e.g. `db:1`)
+- `evcc.url`, `evcc.vehicle` (name from evcc `/api/state`, e.g. `db:1`), optional `evcc.ui_url` (address your browser uses for the "evcc" button in the header, default `evcc.url`)
 - `language: de` for German (default `en`); `rules` for title words like car/train
 
 Everything else has defaults, most values can also be changed in the UI under Settings.

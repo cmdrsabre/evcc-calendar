@@ -299,6 +299,8 @@
  "ui.tab.settings": "Einstellungen",
  "ui.timeline.aria": "Termine",
  "ui.title": "Ladeplanung",
+ "ui.top.evcc": "evcc",
+ "ui.top.evcc_title": "evcc-Oberfläche in neuem Tab öffnen",
  "ui.top.logout": "Abmelden",
  "ui.top.run": "Jetzt prüfen",
  "ui.top.run_title": "Rechnet alles neu. Es wird nichts in evcc geschrieben.",

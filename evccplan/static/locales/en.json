@@ -299,6 +299,8 @@
  "ui.tab.settings": "Settings",
  "ui.timeline.aria": "Appointments",
  "ui.title": "Charge planning",
+ "ui.top.evcc": "evcc",
+ "ui.top.evcc_title": "Open the evcc interface in a new tab",
  "ui.top.logout": "Sign out",
  "ui.top.run": "Check now",
  "ui.top.run_title": "Recalculates everything. Nothing is written to evcc.",

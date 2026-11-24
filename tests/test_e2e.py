@@ -426,6 +426,13 @@ def test_level_without_targets_is_reported_not_crashing(env):
     assert any("kein Ziel" in n["status"] for n in r["notices"])
 
 
+def test_config_evcc_ui_url():
+    assert from_dict({"evcc": {"url": "http://evcc:7070/"}}).evcc_ui_url == "http://evcc:7070"
+    c = from_dict({"evcc": {"url": "http://evcc:7070", "ui_url": "https://evcc.example.org/"}})
+    assert c.evcc_ui_url == "https://evcc.example.org"
+    assert from_dict({"evcc": {"url": "http://evcc:7070", "ui_url": "javascript:x"}}).evcc_ui_url == "http://evcc:7070"
+
+
 def test_config_notify_targets_parse():
     c = from_dict({"ha": {"notify_targets": {"info": "notify.x", "error": ["notify.x", "notify.y"]}}})
     assert c.notify_targets == {"info": ["notify.x"], "warning": [], "error": ["notify.x", "notify.y"]}
