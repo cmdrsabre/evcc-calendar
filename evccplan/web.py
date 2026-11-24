@@ -163,7 +163,7 @@ def make_server(runner, cfg, live: LivePoller = None) -> ThreadingHTTPServer:
                 res = dict(runner.last() or {})
                 res.update({"busy": runner.busy() or runs.pending, "config_dry_run": cfg.dry_run,
                             "timezone": cfg.timezone, "reserve_soc": cfg.reserve_soc, "targets": TARGETS,
-                            "manual_drive_min": cfg.manual_drive_min, "language": cfg.language, "version": __version__, "now": datetime.now(timezone.utc).isoformat()})
+                            "manual_drive_min": cfg.manual_drive_min, "language": cfg.language, "evcc_ui_url": cfg.evcc_ui_url, "version": __version__, "now": datetime.now(timezone.utc).isoformat()})
                 return self._json(200, res)
             if path == "/api/live":                       # cached value only, never a request to evcc
                 if not self._authed():

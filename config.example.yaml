@@ -20,6 +20,7 @@ ha:
 evcc:
   url: http://evcc.local:7070
   api_key_env: EVCC_API_KEY
+  # ui_url: http://evcc.local:7070    # address your browser uses for the "evcc" button, if different from url
   vehicle: "db:1"                     # name from /api/state (empty = the only vehicle)
 
 ors:

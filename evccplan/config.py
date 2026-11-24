@@ -24,6 +24,7 @@ class Config:
     ha_weather: str = ""
     evcc_url: str = ""
     evcc_key: str = ""
+    evcc_ui_url: str = ""            # address of the evcc web interface as the browser sees it (default: evcc_url)
     evcc_vehicle: str = ""
     ors_key: str = ""
     ors_min_confidence: float = 0.7
@@ -87,6 +88,8 @@ def from_dict(d: dict, env=_env) -> Config:
     ev = d.get("evcc") or {}
     c.evcc_url = (ev.get("url") or "").rstrip("/")
     c.evcc_key = env(ev.get("api_key_env"))
+    ui = str(ev.get("ui_url") or "").rstrip("/")
+    c.evcc_ui_url = ui if ui.startswith(("http://", "https://")) else c.evcc_url
     c.evcc_vehicle = ev.get("vehicle") or ""
     ors = d.get("ors") or {}
     c.ors_key = env(ors.get("key_env"))
