@@ -69,7 +69,7 @@ def parse_state(state, vehicle: str = "") -> dict:
     energy = _kilo(lp.get("chargedEnergy"))
     loadpoint = {"connected": _flag(lp.get("connected")), "charging": _flag(lp.get("charging")),
                  "power_kw": _kilo(lp.get("chargePower")), "soc": None if soc is None else round(soc, 1),
-                 "energy_kwh": energy}
+                 "energy_kwh": energy, "plan_active": _flag(lp.get("planActive")), "enabled": _flag(lp.get("enabled"))}
     site = {"pv_kw": _kilo(state.get("pvPower")), "grid_kw": _kilo(_grid_power(state)),
             "home_kw": _kilo(state.get("homePower"))}
     return {"loadpoint": {k: v for k, v in loadpoint.items() if v is not None},
