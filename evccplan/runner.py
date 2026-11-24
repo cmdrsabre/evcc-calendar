@@ -15,6 +15,7 @@ from .models import Event
 from .config import Config
 from .i18n import t
 from .models import Notice, Route, override_key
+from .notify import Notifier
 from .settings import Settings
 from .store import Store
 
@@ -24,6 +25,8 @@ GOOD_LAYERS = ("address", "venue")
 
 PUSH_RETRY_S = 300          # after a failed push `watch` waits this long before trying the same notice again
 UNPLUGGED_LEAD_MIN = 10     # warn this long before the planned charge start if the car is not plugged in
+LIMIT_RETRY_H = 3.0         # car charge limit still too low this long after setting it: try again
+LIMIT_MAX_TRIES = 2         # then give up and tell the user
 EARLIER_MIN = 10            # tell when charging has to start at least this much earlier than assumed
 
 
@@ -36,6 +39,7 @@ class Runner:
                  now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
         self.cfg, self.store, self.ha, self.evcc, self.ors, self.now_fn = cfg, store, ha, evcc, ors, now_fn
         self.settings = Settings(cfg, store)
+        self.notifier = Notifier(cfg, store)
         self._lock = threading.Lock()
         self._state: dict = {}
         self._last_ok: dict = {}
@@ -137,7 +141,7 @@ class Runner:
             self._ors_down = False
             res: dict = {"time": _iso(now), "dry_run": dry, "ok": False, "error": None, "items": [],
                          "desired": None, "action": None, "notices": [], "vehicle": None, "effective": None,
-                         "problems": [], "stale_since": None}
+                         "problems": [], "stale_since": None, "limit_fix": None}
             try:
                 self._run(res, now, dry)
             except EvccDown as exc:
@@ -236,6 +240,16 @@ class Runner:
         if ev.desired:
             notices += planner.context_notices(ev.desired, veh.get("repeatingPlans"), lp.get("vehicleLimitSoc"),
                                                cfg, float(capacity), now)
+        notices += self._limit_fix(res, lp, ev.desired, now, dry)
+        res["vehicle"]["limit_fix"] = res.get("limit_fix")
+        fx = res.get("limit_fix") or {}
+        suffix = {"pending": lambda: self._t("limit_trying", value=cfg.limit_value),
+                  "dry": lambda: self._t("limit_dry", value=cfg.limit_value),
+                  "failed": lambda: self._t("limit_failed", detail=fx.get("error"))}.get(fx.get("state"))
+        if suffix:                                            # tell in the "limit too low" warning that a correction is under way
+            for n in notices:
+                if n.key.startswith("carlimit:"):
+                    n.text += " " + suffix()
         current = veh.get("plan") or None
         last_set = self.store.get("last_set")
         action = planner.reconcile(ev.desired, current, last_set, now, cfg.language)
@@ -258,7 +272,8 @@ class Runner:
             try:
                 if action.kind == "set":
                     self.evcc.set_plan(name, ev.desired.soc, ev.desired.time)
-                    self.store.put("last_set", {"soc": ev.desired.soc, "time": _iso(ev.desired.time)})
+                    self.store.put("last_set", {"soc": ev.desired.soc, "time": _iso(ev.desired.time),
+                                                "slack_min": ev.desired.slack_min})
                 else:
                     self.evcc.delete_plan(name)
                     self.store.delete("last_set")
@@ -319,10 +334,12 @@ class Runner:
                         target="%d" % round(target), start=when(w_start), expected=when(expected)), level="info"))
                 left_h = calc.hours_to_charge(target - soc, float(view["capacity"]), self.cfg.charge_power_kw, self.cfg.charge_loss_margin)
                 end = w_end if not view["window"]["estimated"] else max(now, w_start) + timedelta(hours=left_h)
-                if end > deadline + timedelta(minutes=1):
+                # the buffer is planned into the deadline: only what exceeds plan time + buffer is really late
+                late_min = (end - deadline).total_seconds() / 60 - self._slack_min(deadline)
+                if late_min >= max(1.0, self.cfg.notify_min_late_min):
                     notices.append(Notice("overrun:%s" % view["deadline"], self._t(
                         "plan_overrun", soc="%d" % round(target), time=when(deadline),
-                        late=self._t("plan_overrun_by", min="%d" % round((end - deadline).total_seconds() / 60))), ttl_hours=12))
+                        late=self._t("plan_overrun_by", min="%d" % round(late_min))), ttl_hours=12))
             mono = time.monotonic()
             notices = [n for n in notices if self._watch_retry.get(n.key, 0.0) <= mono]
             if notices:
@@ -391,6 +408,43 @@ class Runner:
         except ApiError:
             return None
 
+    def _limit_fix(self, res, lp, desired, now, dry) -> list:
+        """Car charge limit below what the plan needs: raise it once via Home Assistant, confirm via evcc's vehicleLimitSoc."""
+        cfg, out = self.cfg, []
+        limit = lp.get("vehicleLimitSoc")
+        st = self.store.get("limitfix")                       # {"time","from","plan","tries"}
+        low = isinstance(limit, (int, float)) and not isinstance(limit, bool) and 0 < limit < cfg.vehicle_limit_min
+        if not low:
+            if st and isinstance(limit, (int, float)) and limit > 0:
+                out.append(Notice("carlimit_ok:%s" % st["time"], self._t("limit_ok", limit="%d" % limit), level="info"))
+                self.store.delete("limitfix")
+            return out
+        if not (cfg.limit_entity and cfg.limit_auto and desired):
+            return out
+        plan = _iso(desired.time)
+        if st and st.get("plan") != plan:
+            st = None                                         # new plan: start over
+        last = planner._parse(st["time"]) if st else None
+        due = st is None or (now - last >= timedelta(hours=LIMIT_RETRY_H) and st["tries"] < LIMIT_MAX_TRIES)
+        if due:
+            if st:                                            # previous attempt had no effect
+                out.append(Notice("carlimit_retry:%s:%d" % (plan, st["tries"]), self._t(
+                    "limit_retry", limit="%d" % limit, hours="%g" % LIMIT_RETRY_H, value=cfg.limit_value)))
+            if dry:
+                res["limit_fix"] = {"state": "dry"}
+            else:
+                try:
+                    self.ha.set_number(cfg.limit_entity, cfg.limit_value)
+                    st = {"time": _iso(now), "from": limit, "plan": plan, "tries": (st or {}).get("tries", 0) + 1}
+                    self.store.put("limitfix", st)
+                except ApiError as exc:
+                    res["limit_fix"] = {"state": "failed", "error": str(exc)}
+        elif st and st["tries"] >= LIMIT_MAX_TRIES and now - last >= timedelta(hours=LIMIT_RETRY_H):
+            out.append(Notice("carlimit_retry:%s:gaveup" % plan, self._t("limit_gave_up", limit="%d" % limit)))
+        if st and res.get("limit_fix") is None:
+            res["limit_fix"] = {"state": "pending", "since": st["time"], "value": cfg.limit_value}
+        return out
+
     def _check_effective(self, res, lp, last_set, now, notices) -> None:
         eid = lp.get("effectivePlanId")
         res["effective"] = {"id": eid, "soc": lp.get("effectivePlanSoc"), "time": lp.get("effectivePlanTime")}
@@ -448,18 +502,32 @@ class Runner:
                              kwh="%.1f" % cost["kwh"])
 
     def _check_overrun(self, lp: dict, notices: list) -> None:
-        """evcc reports a plan that cannot be reached in time (planOverrun); tell once per plan time."""
+        """evcc reports a plan that cannot be reached in time (planOverrun); tell once per plan time.
+
+        The charge buffer is already planned into the plan time, so evcc finishing a little after it is expected:
+        only a finish later than plan time + buffer (and at least `notify_min_late_min` of it) is reported."""
         over = lp.get("planOverrun")
         plan_time, end = planner._parse(lp.get("effectivePlanTime")), planner._parse(lp.get("planProjectedEnd"))
         if isinstance(over, bool) or not isinstance(over, (int, float)) or over <= 0 or not plan_time or plan_time <= self.now_fn():
             return                                              # a past plan is history: no push
-        late = ""
-        if end and end > plan_time:
-            late = self._t("plan_overrun_by", min="%d" % round((end - plan_time).total_seconds() / 60))
+        if end is None:
+            end = plan_time + timedelta(seconds=over / 1e9)     # evcc reports planOverrun as a duration in nanoseconds
+        late_min = (end - plan_time).total_seconds() / 60 - self._slack_min(plan_time)
+        if late_min < max(1.0, self.cfg.notify_min_late_min):
+            return
         notices.append(Notice("overrun:%s" % _iso(plan_time),
                               self._t("plan_overrun", soc="%d" % round(lp.get("effectivePlanSoc") or 0),
-                                      time=planner._fmt(plan_time, self.cfg.timezone), late=late),
+                                      time=planner._fmt(plan_time, self.cfg.timezone),
+                                      late=self._t("plan_overrun_by", min="%d" % round(late_min))),
                               ttl_hours=12))
+
+    def _slack_min(self, plan_time) -> float:
+        """Buffer that was planned in before `plan_time` (the real latest time is plan time + slack)."""
+        ls = self.store.get("last_set") or {}
+        t = planner._parse(ls.get("time"))
+        if t and plan_time and abs((t - plan_time).total_seconds()) < 60 and isinstance(ls.get("slack_min"), (int, float)):
+            return float(ls["slack_min"])
+        return float(self.cfg.charge_buffer_min)                # plan set by hand in evcc, or before 0.7.0
 
     def _sessions(self, state: dict, name: str, title: str, now: datetime) -> None:
         """Finished charging sessions of the vehicle with their real cost go into the history (once each)."""
@@ -489,6 +557,10 @@ class Runner:
             self.store.mark_notified("session:%d" % sid)
 
     def _send(self, res: dict, notices: list, dry: bool) -> None:
+        quiet = self.notifier.in_quiet(self.now_fn())
+        if not quiet and not dry:                           # quiet hours over: deliver what was held back first
+            held = [Notice(h["key"], h["text"], h.get("ttl"), h.get("level") or "warning") for h in self.notifier.take_held()]
+            notices = held + list(notices)
         seen = set()
         for n in notices:
             if n.key in seen:
@@ -499,12 +571,15 @@ class Runner:
                 entry["status"] = self._t("status_already")
             elif dry:
                 entry["status"] = self._t("status_dry")
-            elif not self.cfg.notify_targets.get(n.level):
+            elif not (targets := self.notifier.targets(n)):
                 entry["status"] = self._t("status_no_target", level=n.level)
+            elif quiet and n.level != "error":
+                self.notifier.hold(n)
+                entry["status"] = self._t("status_held")
             else:
                 try:
                     title = self._t("push_title_" + n.level)
-                    self.ha.notify(self.cfg.notify_targets[n.level], title, n.text)
+                    self.ha.notify(targets, title, n.text)
                     self.store.mark_notified(n.key)
                     entry["status"] = self._t("status_sent")
                 except ApiError as exc:

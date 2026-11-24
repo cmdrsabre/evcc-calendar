@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Optional
@@ -10,6 +11,8 @@ from . import i18n
 from .classify import Rule
 from .live import DEFAULT_INTERVAL_S, clamp_interval
 from .models import Mode
+
+log = logging.getLogger("evccplan")
 
 
 @dataclass
@@ -22,6 +25,9 @@ class Config:
     ha_calendars: list = field(default_factory=lambda: ["calendar.a_a"])
     notify_targets: dict = field(default_factory=dict)   # level -> notify entities
     ha_weather: str = ""
+    limit_entity: str = ""           # HA number entity of the car's charge limit (empty = feature off)
+    limit_value: int = 100           # value the limit is raised to
+    limit_auto: bool = True          # raise the limit automatically when it is below vehicle_limit_min
     evcc_url: str = ""
     evcc_key: str = ""
     evcc_ui_url: str = ""            # address of the evcc web interface as the browser sees it (default: evcc_url)
@@ -38,6 +44,7 @@ class Config:
     time_buffer_min: float = 30.0
     charge_buffer_min: float = 3.0   # target reached this early, so small delays are not reported
     cold_buffer_min: float = 12.0    # extra when the temperature is below temp_threshold_c
+    notify_min_late_min: float = 2.0  # lateness beyond the charge buffer (minutes) before a push is sent
     charge_power_kw: float = 11.0
     charge_loss_margin: float = 0.15
     chain_window_h: float = 5.0
@@ -85,6 +92,14 @@ def from_dict(d: dict, env=_env) -> Config:
         v = tg.get(lvl) or []
         c.notify_targets[lvl] = [v] if isinstance(v, str) else list(v)
     c.ha_weather = ha.get("weather") or ""
+    cl = ha.get("charge_limit") or {}
+    ent = str(cl.get("entity") or "")
+    if ent and not ent.startswith(("number.", "input_number.")):
+        log.warning("ha.charge_limit.entity must be a number or input_number entity, ignoring %r", ent)
+        ent = ""
+    c.limit_entity = ent
+    c.limit_value = min(max(int(cl.get("value", c.limit_value)), 50), 100)
+    c.limit_auto = bool(cl.get("auto", c.limit_auto))
     ev = d.get("evcc") or {}
     c.evcc_url = (ev.get("url") or "").rstrip("/")
     c.evcc_key = env(ev.get("api_key_env"))
@@ -99,7 +114,8 @@ def from_dict(d: dict, env=_env) -> Config:
     c.cold = float(cons.get("cold", c.cold))
     c.temp_threshold_c = float(cons.get("temp_threshold_c", c.temp_threshold_c))
     for key in ("reserve_soc", "time_buffer_min", "charge_buffer_min", "cold_buffer_min", "charge_power_kw",
-                "charge_loss_margin", "chain_window_h", "retry_delay_s", "min_car_km", "manual_drive_min"):
+                "charge_loss_margin", "chain_window_h", "retry_delay_s", "min_car_km", "manual_drive_min",
+                "notify_min_late_min"):
         if key in d:
             setattr(c, key, float(d[key]))
     for key in ("unclear_cap_soc", "horizon_days", "run_every_min", "vehicle_limit_min", "retries"):

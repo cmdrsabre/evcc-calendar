@@ -89,6 +89,16 @@ class HAClient:
                              description=raw.get("description") or ""))
         return out
 
+    def call_service(self, domain: str, service: str, data: dict) -> None:
+        _request("POST", "%s/api/services/%s/%s" % (self.url, domain, service), self.headers, data, timeout=self.timeout)
+
+    def notify_entities(self) -> list:
+        """[(entity_id, friendly name)] of all notify entities (for the routing matrix)."""
+        _, data = _request("GET", "%s/api/states" % self.url, self.headers, timeout=self.timeout)
+        out = [(s["entity_id"], (s.get("attributes") or {}).get("friendly_name") or s["entity_id"])
+               for s in data or [] if isinstance(s, dict) and str(s.get("entity_id", "")).startswith("notify.")]
+        return sorted(out)
+
     def notify(self, entities: list, title: str, message: str) -> None:
         """notify.send_message with target entities (app push, Telegram, Alexa announcement ...)."""
         # one call per entity: a target that rejects the text (e.g. Telegram MarkdownV2 on "(") must not fail the others
@@ -98,14 +108,19 @@ class HAClient:
                 t, m = title, message
                 if "telegram" in entity.lower():            # shortcut: matched by entity id; HA parses Telegram text as MarkdownV2
                     t, m = _MDV2.sub(r"\\\1", t), _MDV2.sub(r"\\\1", m)
-                _request("POST", "%s/api/services/notify/send_message" % self.url, self.headers,
-                         {"entity_id": [entity], "title": t, "message": m}, timeout=self.timeout)
+                self.call_service("notify", "send_message", {"entity_id": [entity], "title": t, "message": m})
             except ApiError as exc:
                 errors.append("%s: %s" % (entity, exc))
         if errors and len(errors) == len(list(entities)):
             raise ApiError("; ".join(errors))
         for e in errors:
             log.warning("Push to one target failed (others delivered): %s", e)
+
+    def set_number(self, entity: str, value) -> None:
+        """number.set_value / input_number.set_value for a number or input_number entity."""
+        domain = entity.split(".")[0]
+        _request("POST", "%s/api/services/%s/set_value" % (self.url, domain), self.headers,
+                 {"entity_id": entity, "value": value}, timeout=self.timeout)
 
     def weather_temperature(self, entity: str) -> Optional[float]:
         if not entity:

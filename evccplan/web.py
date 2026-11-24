@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,12 +13,14 @@ from urllib.parse import parse_qs, urlsplit
 
 from . import __version__, i18n
 from .auth import MIN_LENGTH, SESSION_DAYS, Auth
+from .clients import ApiError
 from .live import LivePoller
+from .notify import CATEGORIES, DEFAULT_QUIET
 
 log = logging.getLogger("evccplan")
 STATIC = Path(__file__).resolve().parent / "static"
 COOKIE = "evccplan_session"
-MAX_BODY = 4096
+MAX_BODY = 8192
 TYPES = {
     ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".webp": "image/webp",
@@ -74,6 +77,28 @@ def make_server(runner, cfg, live: LivePoller = None) -> ThreadingHTTPServer:
     auth = Auth(runner.store)
     live = live or LivePoller(runner.evcc, cfg)       # not started here: the caller decides whether it polls
     runs = RunRequester(runner)
+    ntf_cache = {"time": 0.0, "entities": [], "error": None}   # notify entities from HA, cached for 10 minutes
+    ntf_lock = threading.Lock()
+    ntf_test = {"last": 0.0}                                    # monotonic time of the last test message
+
+    def _notify_entities():
+        """([(id, name)], error text or None): HA notify entities plus all YAML targets, cached."""
+        with ntf_lock:
+            if time.monotonic() - ntf_cache["time"] > 600 or not ntf_cache["time"]:
+                try:
+                    ntf_cache["entities"] = runner.ha.notify_entities()
+                    ntf_cache["error"] = None
+                except ApiError as exc:
+                    ntf_cache["error"] = str(exc)           # keep the last cache
+                ntf_cache["time"] = time.monotonic()
+            ents, err = list(ntf_cache["entities"]), ntf_cache["error"]
+        have = {e for e, _ in ents}
+        for lst in cfg.notify_targets.values():
+            for e in lst:
+                if e not in have:
+                    have.add(e)
+                    ents.append((e, e))
+        return sorted(ents), err
 
     class H(BaseHTTPRequestHandler):
         server_version = "evccplan"
@@ -173,6 +198,10 @@ def make_server(runner, cfg, live: LivePoller = None) -> ThreadingHTTPServer:
                 if not self._authed():
                     return self._json(401, {"error": self.T("api.login_required")})
                 return self._json(200, self._settings_dict())
+            if path == "/api/notify":
+                if not self._authed():
+                    return self._json(401, {"error": self.T("api.login_required")})
+                return self._json(200, self._notify_dict())
             if path == "/api/history":
                 if not self._authed():
                     return self._json(401, {"error": self.T("api.login_required")})
@@ -255,12 +284,51 @@ def make_server(runner, cfg, live: LivePoller = None) -> ThreadingHTTPServer:
                 return self._override(data)
             if path == "/api/settings":
                 return self._settings(data)
+            if path == "/api/notify":
+                return self._notify(data)
+            if path == "/api/notify/test":
+                return self._notify_test(data)
             self._json(404, {"error": self.T("api.not_found")})
 
         def _settings_dict(self) -> dict:
             st = runner.settings
             return {"values": st.values(), "defaults": st.base, "changed": st.changed(), "limits": st.limits(),
-                    "languages": i18n.available()}
+                    "languages": i18n.available(), "limit_entity": runner.cfg.limit_entity}
+
+        def _notify_dict(self) -> dict:
+            ents, err = _notify_entities()
+            prefs = runner.notifier.prefs()
+            return {"categories": CATEGORIES, "entities": [{"id": e, "name": n} for e, n in ents],
+                    "routes": runner.notifier.routes(), "custom": bool(prefs.get("routes")),
+                    "quiet": prefs.get("quiet") or dict(DEFAULT_QUIET),
+                    "min_late_min": cfg.notify_min_late_min, "ha_error": err}
+
+        def _notify(self, data: dict):
+            try:
+                if data.get("reset") is True:
+                    runner.notifier.reset()
+                else:
+                    ents, _ = _notify_entities()
+                    runner.notifier.update(data.get("values"), {e for e, _ in ents})
+            except ValueError as exc:
+                return self._json(400, {"error": str(exc)})
+            self._json(200, self._notify_dict())
+
+        def _notify_test(self, data: dict):
+            ents, _ = _notify_entities()
+            entity = data.get("entity")
+            if not isinstance(entity, str) or entity not in {e for e, _ in ents}:
+                return self._json(400, {"error": self.T("api.invalid_values")})
+            with ntf_lock:
+                now = time.monotonic()
+                if ntf_test["last"] and now - ntf_test["last"] < 5:
+                    return self._json(429, {"error": self.T("api.too_many_attempts", wait=5)})
+                ntf_test["last"] = now
+            try:
+                runner.ha.notify([entity], self.T("runner.push_title_info"), self.T("runner.notify_test"))
+            except ApiError as exc:
+                return self._json(502, {"error": str(exc)})
+            self._json(200, {"ok": True})
 
         def _settings(self, data: dict):
             try:
