@@ -66,6 +66,18 @@ Everything else has defaults, most values can also be changed in the UI under Se
 - `read_evcc: true`: the live status comes from evcc's retained topics (`<topic>/site/#`, `loadpoints/#`, `vehicles/#`) instead of polling. If MQTT fails, evcc is polled over HTTP. Planning runs still use the evcc API.
 - `publish: true`: after every run the next plan is published retained under `<publish_topic>/` (`plan` as JSON, plus `plan/soc`, `plan/time`, `plan/title`, `plan/action`, `run/time`, `run/ok`, `run/dry_run`, `run/problems`, `status`). Without a plan the plan topics are empty.
 
+### ICS calendars (optional)
+Besides Home Assistant calendars, appointments can be read directly from an ICS subscription URL, with no OAuth. Add `ics` to `config.yaml` and put the URL into the environment variable named in `url_env` (it is a secret and never shown in the UI, logs or error messages):
+```yaml
+ics:
+  - name: Family          # label on the calendar card, unique
+    url_env: ICS_URL_FAMILY
+```
+- Google: calendar settings, "Integrate calendar", "Secret address in iCal format". Google may serve the feed a little behind the live calendar. iCloud (public link, `webcal://` works), Outlook (published calendar) and Nextcloud (subscription link) work the same way.
+- Recurring appointments (including exceptions and moved single occurrences), time zones and floating times are handled; all-day and cancelled events are skipped like in Home Assistant calendars.
+- Works alone or next to `ha.calendar`. Without `ha.calendar` only the ICS feeds are read. Home Assistant is still needed for push, weather and the charge limit.
+- A feed that cannot be read falls back to its last state, like a Home Assistant calendar. Feeds are limited to 5 MB.
+
 ### Raise the charge limit automatically
 If the charge limit set in the car is below `vehicle_limit_min`, the plan cannot be reached. With `ha.charge_limit.entity` (a `number` or `input_number` entity of your car integration, e.g. `number.ioniq_5_ac_charging_limit`) the service sets it to `ha.charge_limit.value` (default 100, range 50 to 100) via Home Assistant, once per plan. The switch `auto` (default `true`) can also be changed in the UI under Settings once an entity is configured.
 - Confirmation comes from evcc (`vehicleLimitSoc`), not from the Home Assistant entity: cloud-based vehicle integrations often need 10 to 60 minutes, and the HA Bluelink integration polls only about every 2 hours.
@@ -178,7 +190,7 @@ Not scheduled for any version yet:
 - Bluelink consumption (real consumption from the car instead of the configured values)
 - Filter for wrongly entered appointments
 - Google OAuth login
-- Home Assistant optional (calendar directly via Google, other notification channels)
+- Home Assistant optional (other notification channels; calendars can already be read via ICS)
 
 ## License
 [MIT](LICENSE). Third-party components and notices: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

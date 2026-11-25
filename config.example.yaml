@@ -21,6 +21,13 @@ ha:
   #   value: 100
   #   auto: true
 
+# Optional: read calendars directly from ICS subscription URLs (Google "secret address in iCal format",
+# iCloud/Outlook/Nextcloud links). Works alone or together with ha.calendar. The URL is a secret and
+# only comes from the environment variable. See README.
+# ics:
+#   - name: Family                   # label on the calendar card, must be unique
+#     url_env: ICS_URL_FAMILY
+
 evcc:
   url: http://evcc.local:7070
   api_key_env: EVCC_API_KEY
