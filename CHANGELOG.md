@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.7.1
+- Fix: OpenRouteService switched off `api.openrouteservice.org` (HTTP 410 "Gone"). Geocoding and routes now use the new `api.heigit.org` URLs (same API key). Before this fix, appointments without a stored route were not planned any more.
+
 ## 0.7.0
 - Fix: the "plan not reachable in time (1–2 min late)" warning came almost daily although the charge buffer is configured. The buffer is subtracted from the plan time sent to evcc, and both lateness checks then measured against that already earlier time, so the buffer could never absorb a delay. Now a delay is only reported when evcc finishes later than plan time + the buffer that was planned in (stored with the plan, so the cold buffer counts too) and by at least `notify_min_late_min` (default 2, editable in the UI). The reported minutes are the delay beyond the buffer.
 - One status chip at the top of the vehicle box: not plugged in / plugged in / charging with power / "not charging" when evcc has an active plan but no power has flowed for 3 minutes. The Live status box no longer repeats the chips.
