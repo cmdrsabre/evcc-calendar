@@ -46,6 +46,7 @@ class Runner:
         self._sessions_after = 0.0                              # monotonic time before which sessions are not read again
         self._ors_down = False
         self._watch_retry: dict = {}                            # notice key -> monotonic time of the next try after a failed push
+        self.mqtt = None                                        # MqttClient, set by the service (publishes the plan)
         self._cal_names: dict = {}                              # calendar entity -> display name
 
     def _t(self, key: str, **kw) -> str:
@@ -162,6 +163,8 @@ class Runner:
                 self.store.put("last_run", res)
             self._state = res
             self._record(res)
+            if self.mqtt is not None:
+                self.mqtt.publish_run(res)
             return res
 
     def _record(self, res: dict) -> None:

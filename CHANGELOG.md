@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0
+- Optional MQTT link (`evcc.mqtt`, also in the Settings tab; plain MQTT with user and password, the password only via environment variable `EVCC_MQTT_PASSWORD`).
+- Live status from evcc's retained MQTT topics instead of polling `/api/state`: updates arrive as soon as evcc publishes them. If MQTT does not deliver (broker down, wrong login, evcc offline), evcc is polled over HTTP as before and the live box says why. Topics with secrets (sponsor token, certificates, passwords) are never subscribed to or kept.
+- The service can publish the next plan as retained topics under `evcc-calendar/` (`plan`, `plan/soc`, `plan/time`, `plan/title`, `plan/action`, `run/time`, `run/ok`, `run/dry_run`, `run/problems`, `status` = online/offline via last will), e.g. for a Home Assistant card.
+
 ## 0.7.1
 - Fix: OpenRouteService switched off `api.openrouteservice.org` (HTTP 410 "Gone"). Geocoding and routes now use the new `api.heigit.org` URLs (same API key). Before this fix, appointments without a stored route were not planned any more.
 

@@ -81,10 +81,11 @@ def _iso(dt: datetime) -> str:
 
 
 class LivePoller:
-    def __init__(self, evcc, cfg, now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
-        self.evcc, self.cfg, self.now_fn = evcc, cfg, now_fn
+    def __init__(self, evcc, cfg, now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc), mqtt=None):
+        self.evcc, self.cfg, self.now_fn, self.mqtt = evcc, cfg, now_fn, mqtt
         self._lock = threading.Lock()
-        self._snap: dict = {"reachable": None, "time": None, "ok_time": None, "loadpoint": {}, "site": {}}
+        self._snap: dict = {"reachable": None, "time": None, "ok_time": None, "loadpoint": {}, "site": {},
+                            "source": None, "mqtt_error": None}
         self._solar_hist: dict = {}                                # forecast values of passed quarter hours (poll thread only)
         self._raw: dict = {}                                       # values for the charge view, from the last good poll
         self._stop = threading.Event()
@@ -115,10 +116,10 @@ class LivePoller:
     def poll_once(self) -> None:
         now = _iso(self.now_fn())
         try:
-            state = self.evcc.state()
+            state, source, mqtt_error = self._read_state()
             parsed = parse_state(state, self.cfg.evcc_vehicle)
             raw = self._extract(state)
-            new = {"reachable": True, "time": now, "ok_time": now, **parsed}
+            new = {"reachable": True, "time": now, "ok_time": now, "source": source, "mqtt_error": mqtt_error, **parsed}
         except ApiError as exc:
             new = self._failed(now, str(exc))
         except Exception as exc:                                   # the poll must never stop the thread
@@ -134,6 +135,20 @@ class LivePoller:
         if new["reachable"] and was is False:
             log.info("Live status: evcc is reachable again")
 
+    def _read_state(self) -> tuple:
+        """(state, "mqtt" | "http", mqtt error). With MQTT on, evcc is only asked over HTTP when MQTT does not deliver."""
+        if self.mqtt is not None and self.cfg.mqtt_enabled and self.cfg.mqtt_read:
+            try:
+                return self.mqtt.state(), "mqtt", None
+            except ApiError as exc:
+                return self.evcc.state(), "http", str(exc)
+        return self.evcc.state(), "http", None
+
+    def reconfigure_mqtt(self) -> None:
+        """Settings changed: reconnect (or disconnect) and refresh the status right away."""
+        if self.mqtt is not None:
+            self.mqtt.reconfigure()
+
     def _extract(self, state) -> dict:
         try:
             lp = _loadpoint(state, self.cfg.evcc_vehicle) if isinstance(state, dict) else {}
@@ -147,7 +162,8 @@ class LivePoller:
             was = self._snap["reachable"]
         if was is not False:                                       # log the change, not every poll
             log.warning("Live status: evcc not reachable (%s)", detail)
-        return {"reachable": False, "time": now, "ok_time": None, "loadpoint": {}, "site": {}}
+        return {"reachable": False, "time": now, "ok_time": None, "loadpoint": {}, "site": {}, "source": None,
+                "mqtt_error": self.mqtt.error() if self.mqtt is not None and self.cfg.mqtt_enabled else None}
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -158,11 +174,21 @@ class LivePoller:
 
     def stop(self) -> None:
         self._stop.set()
+        if self.mqtt is not None:
+            self.mqtt.changed.set()
+
+    def _wait(self, seconds: float) -> bool:
+        """True when stopping. With MQTT the wait ends early on new data, but not more often than once a second."""
+        if self.mqtt is None or not self.cfg.mqtt_enabled:
+            return self._stop.wait(seconds)
+        self.mqtt.changed.wait(seconds)
+        self.mqtt.changed.clear()
+        return self._stop.wait(1.0)
 
     def _loop(self) -> None:
         fails = 0
         while True:
             self.poll_once()
             fails = fails + 1 if self._snap["reachable"] is False else 0
-            if self._stop.wait(self.next_wait_s(fails)):
+            if self._wait(self.next_wait_s(fails)):
                 return
