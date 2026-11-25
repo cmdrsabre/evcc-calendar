@@ -23,6 +23,7 @@ class Config:
     ha_url: str = ""
     ha_token: str = ""
     ha_calendars: list = field(default_factory=lambda: ["calendar.a_a"])
+    ics_calendars: list = field(default_factory=list)    # (name, url) of ICS subscription feeds; the URL is a secret
     notify_targets: dict = field(default_factory=dict)   # level -> notify entities
     ha_weather: str = ""
     limit_entity: str = ""           # HA number entity of the car's charge limit (empty = feature off)
@@ -94,8 +95,15 @@ def from_dict(d: dict, env=_env) -> Config:
     ha = d.get("ha") or {}
     c.ha_url = (ha.get("url") or "").rstrip("/")
     c.ha_token = env(ha.get("token_env"))
-    cal = ha.get("calendar") or c.ha_calendars
+    ics = d.get("ics") or []
+    cal = ha.get("calendar") or ([] if ics else c.ha_calendars)
     c.ha_calendars = [cal] if isinstance(cal, str) else [str(x) for x in cal]     # one entity or a list
+    for i, entry in enumerate(ics):
+        name, url = str((entry or {}).get("name") or ""), env((entry or {}).get("url_env"))
+        if not name or not url:
+            log.warning("ics entry %d ignored: name or URL (environment variable from url_env) is missing", i + 1)
+        else:
+            c.ics_calendars.append((name, url))
     tg = ha.get("notify_targets") or {}
     for lvl in ("info", "warning", "error"):
         v = tg.get(lvl) or []
@@ -170,8 +178,11 @@ def problems(c: Config) -> list:
         out.append("ha.url is missing")
     if not c.ha_token:
         out.append("HA token is missing (environment variable from ha.token_env)")
-    if not c.ha_calendars:
-        out.append("ha.calendar is missing")
+    if not c.ha_calendars and not c.ics_calendars:
+        out.append("no calendar configured (ha.calendar or ics)")
+    names = [n for n, _ in c.ics_calendars]
+    if len(set(names)) != len(names):
+        out.append("ics names must be unique")
     if not c.evcc_url:
         out.append("evcc.url is missing")
     if not c.evcc_key:

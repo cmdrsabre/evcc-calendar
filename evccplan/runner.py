@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from . import address, calc, chargeview, planner
-from .clients import (ApiError, EvccClient, EvccDown, HAClient, OrsClient, OrsDown,
+from .clients import (ApiError, EvccClient, EvccDown, HAClient, IcsClient, OrsClient, OrsDown,
                       forecast_temperature, straight_line_route)
 from .models import Event
 from .config import Config
@@ -48,6 +48,7 @@ class Runner:
         self._watch_retry: dict = {}                            # notice key -> monotonic time of the next try after a failed push
         self.mqtt = None                                        # MqttClient, set by the service (publishes the plan)
         self._cal_names: dict = {}                              # calendar entity -> display name
+        self.ics = {n: IcsClient(n, u, cfg.timezone) for n, u in cfg.ics_calendars}
 
     def _t(self, key: str, **kw) -> str:
         return t(self.cfg.language, "runner." + key, **kw)
@@ -360,27 +361,32 @@ class Runner:
         """Read all calendars. A failing one falls back to its last state read; the others are planned regardless."""
         end = now + timedelta(days=self.cfg.horizon_days)
         events, notices, served, stale, last_exc = [], [], 0, [], None
-        try:
-            self._cal_names = self.ha.calendar_names()
-        except (ApiError, KeyError, TypeError, AttributeError):         # label only: keep the last names, else the entity id
-            pass
-        for cal in self.cfg.ha_calendars:
+        if self.cfg.ha_calendars:
+            try:
+                self._cal_names = self.ha.calendar_names()
+            except (ApiError, KeyError, TypeError, AttributeError):     # label only: keep the last names, else the entity id
+                pass
+        # (cache/notice id, label, reader): Home Assistant calendars by entity, ICS feeds by their configured name
+        sources = [(cal, self._cal_names.get(cal, cal), lambda cal=cal: self.ha.calendar_events(cal, now, end),
+                    "Home Assistant (calendar %s)" % cal) for cal in self.cfg.ha_calendars]
+        sources += [("ics:" + n, n, lambda c=c: c.events(now, end), "ICS calendar %s" % n) for n, c in self.ics.items()]
+        for cal, label, read, what in sources:
             key = "events_cache:" + cal
             try:
-                got = self._retry(lambda: self.ha.calendar_events(cal, now, end), "Home Assistant (calendar %s)" % cal)
+                got = self._retry(read, what)
             except ApiError as exc:
                 cache = self.store.get(key)
                 last_exc = exc
                 if not cache:
-                    msg = self._t("calendar_down_nocache", calendar=cal, detail=exc)
+                    msg = self._t("calendar_down_nocache", calendar=label, detail=exc)
                 else:
                     got = [Event(uid=d["uid"], title=d["title"], start=datetime.fromisoformat(d["start"]),
                                  end=datetime.fromisoformat(d["end"]), location=d["location"], description=d["description"])
                            for d in cache["events"]]
-                    events += [dataclasses.replace(e, calendar=self._cal_names.get(cal, cal)) for e in got if now <= e.start <= end]
+                    events += [dataclasses.replace(e, calendar=label) for e in got if now <= e.start <= end]
                     served += 1
                     stale.append(cache["time"])
-                    msg = self._t("calendar_down", calendar=cal, time=cache["time"], detail=exc)
+                    msg = self._t("calendar_down", calendar=label, time=cache["time"], detail=exc)
                 res["problems"].append(msg)
                 log.error(msg)
                 notices.append(Notice("calendar_down:" + cal, msg, ttl_hours=6, level="error"))
@@ -389,7 +395,7 @@ class Runner:
                 {"uid": e.uid, "title": e.title, "start": e.start.isoformat(), "end": e.end.isoformat(),
                  "location": e.location, "description": e.description} for e in got]})
             served += 1
-            events += [dataclasses.replace(e, calendar=self._cal_names.get(cal, cal)) for e in got]
+            events += [dataclasses.replace(e, calendar=label) for e in got]
         if last_exc and not served:                                     # nothing readable at all: abort the run
             raise last_exc
         if stale:

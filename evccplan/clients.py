@@ -1,4 +1,4 @@
-"""REST clients for Home Assistant, evcc and OpenRouteService (standard library only)."""
+"""Clients for Home Assistant, evcc, OpenRouteService and ICS calendar feeds (HTTP via the standard library)."""
 from __future__ import annotations
 
 import json
@@ -8,8 +8,9 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from .models import Event, Place, Route
 
@@ -59,6 +60,61 @@ def _request(method: str, url: str, headers: dict, body=None, timeout: float = 2
 
 def _utc(text: str) -> datetime:
     return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+# ---------------------------------------------------------------- ICS feeds
+ICS_MAX_BYTES = 5 * 1024 * 1024
+
+
+class IcsClient:
+    """Reads appointments from an ICS subscription URL (e.g. Google's secret iCal address).
+    The URL is a secret: it never appears in errors or logs, only the name and the host."""
+
+    def __init__(self, name: str, url: str, tz: str = "UTC", timeout: float = 20.0):
+        self.name, self.timeout, self.tz = name, timeout, ZoneInfo(tz)
+        self.url = "https://" + url[len("webcal://"):] if url.startswith("webcal://") else url
+
+    def _fetch(self) -> str:
+        where = "ICS calendar %s" % self.name
+        if not self.url.startswith(("http://", "https://")):
+            raise ApiError("%s: URL must start with http(s)://" % where)
+        try:
+            with urllib.request.urlopen(urllib.request.Request(self.url), timeout=self.timeout) as resp:
+                raw = resp.read(ICS_MAX_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            raise ApiError("%s: HTTP %s" % (where, exc.code)) from None
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise ApiError("%s: %s" % (where, getattr(exc, "reason", exc))) from None
+        if len(raw) > ICS_MAX_BYTES:
+            raise ApiError("%s: feed larger than %d MB" % (where, ICS_MAX_BYTES // 1024 // 1024))
+        return raw.decode("utf-8", "replace")
+
+    def _dt(self, v) -> datetime:
+        if v.tzinfo is None:                                    # floating time: local time of the service
+            v = v.replace(tzinfo=self.tz)
+        return v.astimezone(timezone.utc)
+
+    def events(self, start: datetime, end: datetime) -> list:
+        import icalendar
+        import recurring_ical_events
+        text = self._fetch()
+        try:
+            found = recurring_ical_events.of(icalendar.Calendar.from_ical(text)).between(start, end)
+        except Exception:                                       # parser errors vary; the content may hold the secret, so no detail
+            raise ApiError("ICS calendar %s: invalid calendar data" % self.name) from None
+        out = []
+        for ev in found:
+            s, e = ev.start, ev.end
+            if str(ev.get("STATUS", "")).upper() == "CANCELLED":
+                continue
+            if (isinstance(s, date) and not isinstance(s, datetime)) or not isinstance(e, datetime):   # all-day -> ignore
+                continue
+            title, loc = str(ev.get("SUMMARY", "")), str(ev.get("LOCATION", "")).strip()
+            start_dt, end_dt = self._dt(s), self._dt(e)
+            uid = str(ev.get("UID", "")) or "%s|%s|%s" % (title, start_dt.isoformat(), loc)
+            out.append(Event(uid=uid, title=title, start=start_dt, end=end_dt, location=loc,
+                             description=str(ev.get("DESCRIPTION", ""))))
+        return out
 
 
 # ---------------------------------------------------------------- Home Assistant

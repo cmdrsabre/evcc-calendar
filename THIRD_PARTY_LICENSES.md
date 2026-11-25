@@ -10,6 +10,9 @@ All of them are permissive licenses and compatible with the MIT License.
 |---|---|---|---|
 | [PyYAML](https://github.com/yaml/pyyaml) 6.x | reading `config.yaml` | MIT | installed via `requirements.txt` |
 | [paho-mqtt](https://github.com/eclipse-paho/paho.mqtt.python) 2.x | optional MQTT link | EPL-2.0 OR EDL-1.0 (Eclipse Distribution License, BSD-3-Clause; used under the EDL-1.0) | installed via `requirements.txt` |
+| [icalendar](https://github.com/collective/icalendar) 6.x/7.x | reading ICS calendar feeds | BSD-2-Clause | installed via `requirements.txt` |
+| [recurring-ical-events](https://github.com/niccokunzmann/python-recurring-ical-events) 3.x and [x-wr-timezone](https://github.com/niccokunzmann/x-wr-timezone) 2.x | expanding recurring ICS appointments | LGPL-3.0-or-later (unmodified, installed as separate pip packages, not copied into this repository) | installed via `requirements.txt` |
+| [python-dateutil](https://github.com/dateutil/dateutil) | dependency of the ICS packages | BSD-3-Clause (Apache-2.0 for older parts) | installed via `requirements.txt` |
 | [tzdata](https://github.com/python/tzdata) | time zone data | Apache-2.0 | installed via `requirements.txt` |
 | [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) 5.3.0 (via npm `@fontsource-variable/bricolage-grotesque`, latin subset) | UI font | SIL Open Font License 1.1 | `evccplan/static/fonts/bricolage.woff2`, license text in `evccplan/static/fonts/OFL-Bricolage-Grotesque.txt` |
 | [pytest](https://github.com/pytest-dev/pytest) and its dependencies (iniconfig, pluggy: MIT; packaging: Apache-2.0 OR BSD-2-Clause; Pygments: BSD-2-Clause) | tests only | MIT and others | `requirements-dev.txt`, not part of the Docker image |
