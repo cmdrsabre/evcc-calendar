@@ -26,6 +26,16 @@ evcc:
   api_key_env: EVCC_API_KEY
   # ui_url: http://evcc.local:7070    # address your browser uses for the "evcc" button, if different from url
   vehicle: "db:1"                     # name from /api/state (empty = the only vehicle)
+  mqtt:                               # optional, all values can also be changed in the UI (except the password)
+    enabled: false
+    host: ""                          # MQTT broker, e.g. 192.168.1.10
+    port: 1883                        # plain MQTT (no TLS)
+    user: ""
+    password_env: EVCC_MQTT_PASSWORD  # name of the environment variable that holds the password
+    read_evcc: true                   # live status from evcc's MQTT topics instead of polling /api/state
+    topic: evcc                       # evcc's MQTT topic prefix
+    publish: false                    # publish the next plan (retained) for e.g. a Home Assistant card
+    publish_topic: evcc-calendar
 
 ors:
   key_env: ORS_KEY

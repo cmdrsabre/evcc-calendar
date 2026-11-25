@@ -331,6 +331,8 @@ def make_server(runner, cfg, live: LivePoller = None) -> ThreadingHTTPServer:
             self._json(200, {"ok": True})
 
         def _settings(self, data: dict):
+            mq = lambda: {k: v for k, v in runner.settings.values().items() if k.startswith("mqtt_")}  # noqa: E731
+            before = mq()
             try:
                 if data.get("reset") is True:
                     runner.settings.reset()
@@ -338,6 +340,8 @@ def make_server(runner, cfg, live: LivePoller = None) -> ThreadingHTTPServer:
                     runner.settings.update(data.get("values"))
             except ValueError as exc:
                 return self._json(400, {"error": str(exc)})
+            if mq() != before:
+                live.reconfigure_mqtt()
             runs.request(force_dry=False)        # new values take effect in the configured mode
             self._json(200, self._settings_dict())
 

@@ -32,6 +32,15 @@ class Config:
     evcc_key: str = ""
     evcc_ui_url: str = ""            # address of the evcc web interface as the browser sees it (default: evcc_url)
     evcc_vehicle: str = ""
+    mqtt_enabled: bool = False       # MQTT link on/off (evcc as live source and/or publishing)
+    mqtt_host: str = ""
+    mqtt_port: int = 1883
+    mqtt_user: str = ""
+    mqtt_password: str = ""          # only from the environment, never editable in the UI
+    mqtt_topic: str = "evcc"         # evcc's topic prefix
+    mqtt_read: bool = True           # take the live status from evcc's MQTT topics instead of polling
+    mqtt_publish: bool = False       # publish the next plan
+    mqtt_publish_topic: str = "evcc-calendar"
     ors_key: str = ""
     ors_min_confidence: float = 0.7
     warm: float = 20.0
@@ -106,6 +115,18 @@ def from_dict(d: dict, env=_env) -> Config:
     ui = str(ev.get("ui_url") or "").rstrip("/")
     c.evcc_ui_url = ui if ui.startswith(("http://", "https://")) else c.evcc_url
     c.evcc_vehicle = ev.get("vehicle") or ""
+    mq = ev.get("mqtt") or {}
+    c.mqtt_enabled = bool(mq.get("enabled", c.mqtt_enabled))
+    c.mqtt_host = str(mq.get("host") or "").strip()
+    c.mqtt_port = int(mq.get("port", c.mqtt_port))
+    c.mqtt_user = str(mq.get("user") or "")
+    c.mqtt_password = env(mq.get("password_env") or "EVCC_MQTT_PASSWORD")   # works without an evcc.mqtt block (UI only)
+    c.mqtt_topic = str(mq.get("topic") or c.mqtt_topic).strip("/")
+    c.mqtt_read = bool(mq.get("read_evcc", c.mqtt_read))
+    c.mqtt_publish = bool(mq.get("publish", c.mqtt_publish))
+    c.mqtt_publish_topic = str(mq.get("publish_topic") or c.mqtt_publish_topic).strip("/")
+    if c.mqtt_enabled and not c.mqtt_host:
+        log.warning("evcc.mqtt.enabled is set but evcc.mqtt.host is empty, MQTT stays off")
     ors = d.get("ors") or {}
     c.ors_key = env(ors.get("key_env"))
     c.ors_min_confidence = float(ors.get("min_confidence", c.ors_min_confidence))

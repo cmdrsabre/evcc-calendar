@@ -61,6 +61,11 @@ Edit `config.yaml` (Docker/Unraid: in the data folder). The minimum:
 
 Everything else has defaults, most values can also be changed in the UI under Settings.
 
+### MQTT (optional)
+`evcc.mqtt` in `config.yaml` (or the "MQTT" group in the Settings tab; only the password is environment-only, `EVCC_MQTT_PASSWORD`). Plain MQTT with user and password, no TLS.
+- `read_evcc: true`: the live status comes from evcc's retained topics (`<topic>/site/#`, `loadpoints/#`, `vehicles/#`) instead of polling. If MQTT fails, evcc is polled over HTTP. Planning runs still use the evcc API.
+- `publish: true`: after every run the next plan is published retained under `<publish_topic>/` (`plan` as JSON, plus `plan/soc`, `plan/time`, `plan/title`, `plan/action`, `run/time`, `run/ok`, `run/dry_run`, `run/problems`, `status`). Without a plan the plan topics are empty.
+
 ### Raise the charge limit automatically
 If the charge limit set in the car is below `vehicle_limit_min`, the plan cannot be reached. With `ha.charge_limit.entity` (a `number` or `input_number` entity of your car integration, e.g. `number.ioniq_5_ac_charging_limit`) the service sets it to `ha.charge_limit.value` (default 100, range 50 to 100) via Home Assistant, once per plan. The switch `auto` (default `true`) can also be changed in the UI under Settings once an entity is configured.
 - Confirmation comes from evcc (`vehicleLimitSoc`), not from the Home Assistant entity: cloud-based vehicle integrations often need 10 to 60 minutes, and the HA Bluelink integration polls only about every 2 hours.
@@ -155,7 +160,8 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 
 | Version | Highlights |
 |---|---|
-| [0.7.1](CHANGELOG.md#071) (current) | Fix: OpenRouteService moved to `api.heigit.org`, geocoding and routes work again |
+| [0.8.0](CHANGELOG.md#080) (current) | Optional MQTT: live status from evcc's topics instead of polling, next plan published for Home Assistant |
+| [0.7.1](CHANGELOG.md#071) | Fix: OpenRouteService moved to `api.heigit.org`, geocoding and routes work again |
 | [0.7.0](CHANGELOG.md#070) | Lateness warnings respect the charge buffer, single status chip, evcc button, notification routing tab with quiet hours, car charge limit raised via Home Assistant |
 | [0.6.2](CHANGELOG.md#062) | Back-to-back appointments are planned as one tour with direct legs instead of a round trip each (far lower target), correct charge window for chained appointments |
 | [0.6.1](CHANGELOG.md#061) | Calendar view hides appointments without charging (toggle), push fixes: per-target delivery, Telegram MarkdownV2 escaping, no warnings for past plans |
@@ -173,7 +179,6 @@ Not scheduled for any version yet:
 - Filter for wrongly entered appointments
 - Google OAuth login
 - Home Assistant optional (calendar directly via Google, other notification channels)
-- MQTT: react to evcc topics instead of polling
 
 ## License
 [MIT](LICENSE). Third-party components and notices: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

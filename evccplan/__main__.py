@@ -13,6 +13,7 @@ import time
 from . import config as cfgmod
 from .clients import EvccClient, HAClient, OrsClient
 from .live import LivePoller
+from .mqtt import MqttClient
 from .runner import Runner
 from .store import Store
 from .web import make_server
@@ -53,7 +54,10 @@ def main(argv=None) -> int:
         print(json.dumps(runner.run(force_dry=args.dry_run), ensure_ascii=False, indent=2))
         return 0
     logging.info("Start, mode: %s", "dry run" if cfg.dry_run else "live")
-    live = LivePoller(runner.evcc, cfg)
+    mqtt = MqttClient(cfg)
+    runner.mqtt = mqtt
+    mqtt.start()                                      # does nothing unless evcc.mqtt is enabled (also switchable in the UI)
+    live = LivePoller(runner.evcc, cfg, mqtt=mqtt)
     live.start()
     threading.Thread(target=make_server(runner, cfg, live).serve_forever, daemon=True).start()
     next_run = 0.0

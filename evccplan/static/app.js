@@ -369,7 +369,8 @@
     if (live.reachable == null) { note.textContent = t('ui.live.loading'); return; }
     if (live.reachable === false) {
       note.className = 'live-note is-error';
-      note.textContent = t('ui.live.unreachable') + (live.ok_time && S.fmt ? ' · ' + t('ui.live.unreachable_since', { time: S.fmt.short.format(d(live.ok_time)) }) : '');
+      note.textContent = t('ui.live.unreachable') + (live.ok_time && S.fmt ? ' · ' + t('ui.live.unreachable_since', { time: S.fmt.short.format(d(live.ok_time)) }) : '')
+        + (live.mqtt_error ? ' · ' + t('ui.live.mqtt_fallback', { error: live.mqtt_error }) : '');
       return;
     }
     const lp = live.loadpoint || {}, site = live.site || {};
@@ -386,6 +387,12 @@
     if (!rows) note.textContent = t('ui.live.no_data');
     else if (live.time && S.fmt) note.textContent = t('ui.live.updated', { time: S.fmt.time.format(d(live.time)) });
     else note.textContent = '';
+    if (live.mqtt_error) {
+      note.className = 'live-note is-error';
+      note.textContent += (note.textContent ? ' · ' : '') + t('ui.live.mqtt_fallback', { error: live.mqtt_error });
+    } else if (live.source) {
+      note.textContent += (note.textContent ? ' · ' : '') + t(live.source === 'mqtt' ? 'ui.live.source_mqtt' : 'ui.live.source_http');
+    }
   }
 
 
@@ -760,6 +767,8 @@
     ['trips', [['min_car_km', 'km'], ['manual_drive_min', 'min'], ['time_buffer_min', 'min'], ['charge_buffer_min', 'min'], ['cold_buffer_min', 'min'], ['chain_window_h', 'h']]],
     ['planning', [['horizon_days', 'days'], ['run_every_min', 'min'], ['ors_min_confidence', '']]],
     ['live', [['live_poll_s', 's']]],
+    ['mqtt', [['mqtt_enabled', ''], ['mqtt_host', ''], ['mqtt_port', ''], ['mqtt_user', ''], ['mqtt_read', ''], ['mqtt_topic', ''],
+              ['mqtt_publish', ''], ['mqtt_publish_topic', '']]],
   ];
 
   // Language name in its own language (fallback: the code).
@@ -789,6 +798,10 @@
         inp.id = 'set-' + key;
         if (lim.bool) {
           inp.type = 'checkbox';
+        } else if (lim.text) {
+          inp.type = 'text';
+          inp.maxLength = lim.max;
+          inp.autocomplete = 'off';
         } else {
           inp.type = 'number';
           inp.min = lim.min; inp.max = lim.max;
@@ -799,6 +812,7 @@
         const lab = el('label', 'field row', el('span', null, label), el('span', 'inp', inp, el('em', null, unit || '')));
         fs.append(lab);
       });
+      if (group === 'mqtt') fs.append(el('p', 'hint', t('ui.set.mqtt_hint')));
       box.append(fs);
     });
   }
@@ -808,7 +822,7 @@
     if (S.langSel) S.langSel.value = data.values.language || S.lang;
     for (const [key, inp] of Object.entries(S.inputs)) {
       if (inp.type === 'checkbox') inp.checked = data.values[key] === true;
-      else inp.value = String(data.values[key]);
+      else inp.value = String(data.values[key] == null ? '' : data.values[key]);
       inp.parentElement.parentElement.classList.toggle('changed', data.changed.includes(key));
     }
     const ul = $('rules-list');
@@ -850,8 +864,9 @@
     ev.preventDefault();
     const cur = S.settings.values, values = {};
     for (const [key, inp] of Object.entries(S.inputs)) {
-      const v = inp.type === 'checkbox' ? inp.checked : Number(inp.value);
-      if (inp.type !== 'checkbox' && (inp.value === '' || Number.isNaN(v))) continue;
+      const text = inp.type === 'text';
+      const v = inp.type === 'checkbox' ? inp.checked : text ? inp.value.trim() : Number(inp.value);
+      if (!text && inp.type !== 'checkbox' && (inp.value === '' || Number.isNaN(v))) continue;
       if (v !== cur[key]) values[key] = v;
     }
     if (S.langSel && S.langSel.value && S.langSel.value !== cur.language) values.language = S.langSel.value;
