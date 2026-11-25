@@ -155,7 +155,8 @@ the last one with bug fixes. Version 1.0 would be the open-source release.
 
 | Version | Highlights |
 |---|---|
-| [0.7.0](CHANGELOG.md#070) (current) | Lateness warnings respect the charge buffer, single status chip, evcc button, notification routing tab with quiet hours, car charge limit raised via Home Assistant |
+| [0.7.1](CHANGELOG.md#071) (current) | Fix: OpenRouteService moved to `api.heigit.org`, geocoding and routes work again |
+| [0.7.0](CHANGELOG.md#070) | Lateness warnings respect the charge buffer, single status chip, evcc button, notification routing tab with quiet hours, car charge limit raised via Home Assistant |
 | [0.6.2](CHANGELOG.md#062) | Back-to-back appointments are planned as one tour with direct legs instead of a round trip each (far lower target), correct charge window for chained appointments |
 | [0.6.1](CHANGELOG.md#061) | Calendar view hides appointments without charging (toggle), push fixes: per-target delivery, Telegram MarkdownV2 escaping, no warnings for past plans |
 | [0.6](CHANGELOG.md#060) | Several calendars with a name label, overlap conflicts, charge buffer (extra when cold), pushes for "not plugged in" / "starts earlier" / "plan not reachable" |

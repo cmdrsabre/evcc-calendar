@@ -192,7 +192,9 @@ def _to_dt(x) -> datetime:
 
 
 # ---------------------------------------------------------------- OpenRouteService
-ORS = "https://api.openrouteservice.org"
+# api.openrouteservice.org is switched off (HTTP 410, moved to api.heigit.org in 2026)
+ORS_GEOCODE = "https://api.heigit.org/pelias/v1"
+ORS_ROUTE = "https://api.heigit.org/openrouteservice/v2"
 
 
 class OrsClient:
@@ -201,7 +203,7 @@ class OrsClient:
 
     def geocode(self, text: str) -> Optional[Place]:
         q = urllib.parse.urlencode({"api_key": self.key, "text": text, "boundary.country": "DE", "size": 1})
-        _, d = _request("GET", "%s/geocode/search?%s" % (ORS, q), {}, timeout=self.timeout)
+        _, d = _request("GET", "%s/search?%s" % (ORS_GEOCODE, q), {}, timeout=self.timeout)
         feats = (d or {}).get("features") or []
         if not feats:
             return None
@@ -215,7 +217,7 @@ class OrsClient:
         """a, b = (lat, lon)."""
         q = urllib.parse.urlencode({"api_key": self.key, "start": "%s,%s" % (a[1], a[0]),
                                     "end": "%s,%s" % (b[1], b[0])})
-        _, d = _request("GET", "%s/v2/directions/driving-car?%s" % (ORS, q), {}, timeout=self.timeout)
+        _, d = _request("GET", "%s/directions/driving-car?%s" % (ORS_ROUTE, q), {}, timeout=self.timeout)
         try:
             sm = d["features"][0]["properties"]["summary"]
             return Route(distance_km=sm["distance"] / 1000.0, duration_min=sm["duration"] / 60.0)
